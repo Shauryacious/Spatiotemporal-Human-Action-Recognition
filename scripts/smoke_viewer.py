@@ -1,0 +1,123 @@
+"""Optional real-browser smoke: uv run --with playwright python scripts/smoke_viewer.py. Requires Chrome."""
+
+import asyncio
+import os
+import subprocess
+import tempfile
+import urllib.request
+from pathlib import Path
+
+from playwright.async_api import async_playwright
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+async def main():
+    with tempfile.TemporaryDirectory(prefix="shar-browser-") as temporary:
+        env = {
+            **os.environ,
+            "SHAR_STORAGE_ROOT": temporary,
+            "SHAR_PROVIDER": "mock",
+            "SHAR_MODEL": "fixture-v1",
+            "SHAR_AUTH_MODE": "local",
+            "PYTHONPATH": str(ROOT / "src"),
+            "PYDANTIC_DISABLE_PLUGINS": "__all__",
+        }
+        api = subprocess.Popen(
+            [str(ROOT / ".venv/bin/shar"), "serve", "--port", "8765"],
+            cwd=ROOT,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        worker = subprocess.Popen(
+            [str(ROOT / ".venv/bin/shar"), "worker"],
+            cwd=ROOT,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            for _ in range(1200):
+                try:
+                    urllib.request.urlopen("http://127.0.0.1:8765/ready", timeout=0.5)
+                    break
+                except Exception:
+                    await asyncio.sleep(0.1)
+            else:
+                raise RuntimeError("Test server and worker did not become ready")
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(channel="chrome", headless=True)
+                page = await browser.new_page(viewport={"width": 1280, "height": 1000})
+                errors = []
+                page.on("pageerror", lambda error: errors.append(str(error)))
+                await page.goto("http://127.0.0.1:8765")
+                await page.locator("#file").set_input_files(str(ROOT / "data/fixtures/cfr.mp4"))
+                await page.wait_for_function("document.getElementById('video').videoWidth > 0")
+                await page.locator("#start").click()
+                assert "Enter an action query" in await page.locator("#inlineStatus").inner_text()
+                assert await page.locator("#query").evaluate("el => el === document.activeElement")
+                await page.locator('[data-view="settings"]').click()
+                await page.locator("#testConnection").click()
+                await page.wait_for_function(
+                    "document.getElementById('settingsStatus').textContent.includes('Mock mode')"
+                )
+                await page.locator('[data-view="analyze"]').click()
+                await page.locator("#query").fill("Find observable actions")
+                await page.locator("#start").click()
+                await page.wait_for_function(
+                    "document.getElementById('status').textContent.startsWith('succeeded')",
+                    timeout=30000,
+                )
+                assert await page.locator("#download").is_visible()
+                import io
+
+                from PIL import Image
+
+                from shar.config import Settings
+                from shar.storage.artifacts import LocalArtifacts
+                from shar.storage.repository import Repository
+
+                repository = Repository(Settings(storage_root=Path(temporary)))
+                session = repository.start_stream("local", "synthetic-browser-check")
+                repository.append_stream_event(
+                    session,
+                    "local",
+                    {"type": "event", "revision": 1, "label": "<img src=x onerror=alert(1)>"},
+                )
+                preview = io.BytesIO()
+                Image.new("RGB", (64, 48), "navy").save(preview, format="JPEG")
+                LocalArtifacts(Path(temporary)).put(
+                    f"streams/{session}/preview.jpg", preview.getvalue()
+                )
+                await page.locator('[data-view="stream"]').click()
+                await page.locator("#streamId").fill(session)
+                await page.locator("#monitor").click()
+                await page.wait_for_function(
+                    "document.getElementById('streamPreview').naturalWidth > 0"
+                )
+                assert "revision" in await page.locator("#streamEvents").inner_text()
+                assert not errors, errors
+                await page.screenshot(path=str(ROOT / "outputs/viewer-smoke.png"), full_page=True)
+                print(
+                    {
+                        "viewer_upload_worker_result": "passed",
+                        "stream_polling_preview": "passed",
+                        "javascript_errors": errors,
+                        "status": await page.locator("#status").inner_text(),
+                    }
+                )
+                await browser.close()
+        finally:
+            for process in (worker, api):
+                process.terminate()
+            for process in (worker, api):
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

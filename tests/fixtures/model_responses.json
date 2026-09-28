@@ -1,0 +1,6 @@
+{
+  "version": "1.0",
+  "empty": {"predictions": [], "recognition": [], "tracks": [], "presence": []},
+  "walking": {"predictions": [{"id": "p1", "label": "walking", "start_sec": 0.0, "end_sec": 1.0, "confidence": 0.8, "evidence_frame_ids": ["f0"]}]},
+  "invalid_evidence": {"recognition": [{"label": "walking", "evidence_frame_ids": ["unknown"]}]}
+}

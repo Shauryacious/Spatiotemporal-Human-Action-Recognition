@@ -1,0 +1,17 @@
+name: offline-verification
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.10.8'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: uv sync --locked --all-extras --python 3.12
+      - run: uv run ruff check src scripts tests
+      - run: uv run ruff format --check src scripts tests migrations
+      - run: uv run mypy src/shar
+      - run: uv run pytest -q
+      - run: uv build

@@ -1,0 +1,8 @@
+provider: mock
+enable_refinement: false
+stream_window_sec: 8
+stream_stride_sec: 4
+stream_ring_sec: 16
+# Operator registry, never accepted from an API request.
+stream_sources:
+  webcam: 0

@@ -1,0 +1,27 @@
+x-common: &common
+  build: .
+  environment:
+    SHAR_STORAGE_ROOT: /app/runtime
+    SHAR_HOST: 0.0.0.0
+    SHAR_AUTH_MODE: token
+    SHAR_AUTH_TOKENS: ${SHAR_AUTH_TOKENS:?Set a JSON token-to-owner mapping}
+    SHAR_PROVIDER: ${SHAR_PROVIDER:-mock}
+    SHAR_MODEL: ${SHAR_MODEL:-fixture-v1}
+    SHAR_RPM: ${SHAR_RPM:-}
+    SHAR_TPM: ${SHAR_TPM:-}
+    SHAR_RPD: ${SHAR_RPD:-}
+    GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  volumes:
+    - shar-data:/app/runtime
+services:
+  api:
+    <<: *common
+    command: [shar, serve]
+    ports: ["127.0.0.1:8000:8000"]
+  worker:
+    <<: *common
+    command: [shar, worker]
+    healthcheck:
+      test: [CMD, python, -c, "import os,time; assert time.time()-os.path.getmtime('/app/runtime/worker-heartbeat')<90"]
+volumes:
+  shar-data:

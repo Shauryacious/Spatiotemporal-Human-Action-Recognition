@@ -1,0 +1,6 @@
+temporal_thresholds: [0.5, 0.75, 0.95]
+spatial_threshold: 0.5
+sampling_tolerance_sec: 0.125
+unknown_score_rank: 0.0
+aliases: {}
+seed: 0

@@ -1,0 +1,9 @@
+provider: mock
+model: fixture-v1
+coarse_fps: 1
+fine_fps: 4
+window_sec: 30
+overlap_sec: 5
+enable_temporal: true
+enable_refinement: true
+enable_spatial: false
