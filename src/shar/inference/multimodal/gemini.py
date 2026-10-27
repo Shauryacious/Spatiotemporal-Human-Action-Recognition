@@ -14,7 +14,7 @@ from shar.telemetry import event
 
 
 def provider_schema():
-    """Adapt the wire schema subset; strict numeric invariants remain local."""
+    """Adapt Gemini's response_schema subset; strict validation remains local."""
 
     def convert(value):
         if isinstance(value, list):
@@ -24,7 +24,21 @@ def provider_schema():
         result = {
             key: convert(item)
             for key, item in value.items()
-            if key not in {"default", "exclusiveMinimum", "exclusiveMaximum"}
+            if key
+            not in {
+                "default",
+                "title",
+                "exclusiveMinimum",
+                "exclusiveMaximum",
+                "additionalProperties",
+                # Large nested array/string limits can exceed Gemini's schema
+                # complexity budget. Enforce these on the returned payload.
+                "minItems",
+                "maxItems",
+                "minLength",
+                "maxLength",
+                "pattern",
+            }
         }
         if "exclusiveMinimum" in value:
             result["minimum"] = value["exclusiveMinimum"]

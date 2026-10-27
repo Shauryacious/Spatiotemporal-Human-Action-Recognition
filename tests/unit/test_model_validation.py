@@ -10,6 +10,7 @@ from shar.inference.validation import validate_response
     "payload",
     [
         "bad json",
+        {"predictions": [], "unexpected": "still rejected locally"},
         {
             "predictions": [
                 {"label": "walk", "start_sec": 0.0, "end_sec": 2.0, "evidence_frame_ids": ["f0"]}

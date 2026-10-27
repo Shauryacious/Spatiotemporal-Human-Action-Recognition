@@ -28,7 +28,10 @@ def build(request) -> str:
             {
                 "query": request.query,
                 "time_domain_sec": [request.start_sec, request.end_sec],
-                "frames": [{"id": f.frame_id, "time_sec": f.timestamp_sec} for f in request.frames],
+                "frames": [
+                    {"id": f.frame_id, "frame_index": f.frame_index, "time_sec": f.timestamp_sec}
+                    for f in request.frames
+                ],
                 "previous_state": request.context,
             },
             ensure_ascii=False,

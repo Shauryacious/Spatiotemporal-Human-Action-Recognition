@@ -76,7 +76,24 @@ async def test_real_sdk_serializes_schema_over_fake_http(settings):
     seen = []
 
     def handle(request):
-        seen.append(json.loads(request.content))
+        body = json.loads(request.content)
+        seen.append(body)
+
+        # Pydantic's extra="forbid" emits additionalProperties=False. The SDK
+        # serializes it, but Gemini rejects it in the response_schema field.
+        def assert_supported(value):
+            if isinstance(value, dict):
+                assert "additionalProperties" not in value
+                assert "additional_properties" not in value
+                assert "maxItems" not in value
+                assert "maxLength" not in value
+                for item in value.values():
+                    assert_supported(item)
+            elif isinstance(value, list):
+                for item in value:
+                    assert_supported(item)
+
+        assert_supported(body["generationConfig"]["responseSchema"])
         return httpx.Response(
             200,
             json={

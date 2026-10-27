@@ -32,13 +32,16 @@
           <div class="panel"><div class="panel-head"><div><h2>Run analysis</h2><p>Upload a video and describe the actions to find.</p></div></div><div class="panel-body">
             <div class="field"><label for="file">Video file</label><input id="file" type="file" accept="video/*"></div>
             <div class="field"><label for="query">Action query</label><textarea id="query" aria-describedby="queryHint" required placeholder="Find people walking, and identify when each action occurs."></textarea><span class="hint" id="queryHint">Required: type the action you want to find. The example above is a placeholder.</span></div>
-            <div class="checks"><label class="check"><input id="spatial" type="checkbox"><span>Localize actors</span></label><label class="check"><input id="refine" type="checkbox" checked><span>Refine boundaries</span></label></div>
+            <div class="checks"><label class="check"><input id="spatial" type="checkbox" checked><span>Localize actors</span></label><label class="check"><input id="refine" type="checkbox" checked><span>Refine boundaries</span></label></div>
             <div class="actions-row"><button class="primary" id="start">Analyze video</button><button class="danger" id="cancel" disabled>Cancel</button></div>
-            <p class="hint" id="inlineStatus" role="status" aria-live="polite">Default mock mode returns no semantic predictions.</p>
+            <p class="hint" id="inlineStatus" role="status" aria-live="polite">Ready. Actor boxes and temporal boundaries are enabled.</p>
           </div></div>
-          <div class="panel"><div class="panel-head"><div><h2>Review</h2><p>Boxes appear near observed timestamps only.</p></div><a id="download" hidden>Download JSON</a></div><div class="panel-body">
+          <div class="panel"><div class="panel-head"><div><h2>Review</h2><p>Action labels, confidence, actor boxes and temporal intervals.</p></div><a id="download" hidden>Download JSON</a></div><div class="panel-body">
             <div id="stage"><video id="video" controls preload="metadata"></video><canvas id="overlay"></canvas></div>
-            <p class="hint" id="previewStatus" role="status">Choose a video to preview it here.</p><div id="timeline"></div><div id="actions"></div><pre id="details"></pre>
+            <p class="hint" id="previewStatus" role="status">Choose a video to preview it here.</p><p id="resultSummary" role="status"></p><p id="playbackStatus" class="hint" aria-live="off"></p>
+            <h3>Temporal localisation</h3><div id="timeline" aria-label="Action intervals"></div><div id="actions"></div>
+            <p class="hint">Confidence is a model estimate, not a calibrated probability. Boxes appear within 0.125 s of observed frames; gaps are not interpolated.</p>
+            <details><summary>Analysis diagnostics</summary><pre id="details"></pre></details>
           </div></div>
         </div>
       </section>
@@ -89,7 +92,7 @@ $('menu').onclick=()=>{if(matchMedia('(max-width:900px)').matches)document.body.
 $('saveSettings').onclick=()=>{localStorage.setItem('shar.settings',JSON.stringify({apiBase:$('apiBase').value.trim(),token:$('token').value.trim()}));$('settingsStatus').textContent='Settings saved in this browser.'};
 $('clearSettings').onclick=()=>{$('apiBase').value='';$('token').value='';localStorage.removeItem('shar.settings');$('settingsStatus').textContent='Settings cleared.'};
 $('testConnection').onclick=async()=>{ $('settingsStatus').textContent='Checking authentication and analysis readiness...';try{const h=await api('/connection');$('settingsStatus').textContent=h.provider==='mock'?'Connection ready. Mock mode is active: no real actions will be detected. Configure Gemini on the server and worker for real analysis.':`Connection ready. Provider: ${h.provider}; model: ${h.model}. Provider credentials and quota are checked when analysis runs.`}catch(e){$('settingsStatus').textContent='Analysis connection unavailable: '+e.message}};
-function clearResults(){report=null;$('actions').replaceChildren();$('timeline').replaceChildren();$('details').textContent='';$('download').hidden=true;if(resultURL){URL.revokeObjectURL(resultURL);resultURL=null}}
+function clearResults(){report=null;$('resultSummary').textContent='';$('playbackStatus').textContent='';$('actions').replaceChildren();$('timeline').replaceChildren();$('details').textContent='';$('download').hidden=true;if(resultURL){URL.revokeObjectURL(resultURL);resultURL=null}}
 $('file').onchange=()=>{clearResults();if(mediaURL){URL.revokeObjectURL(mediaURL);mediaURL=null}const file=$('file').files[0];if(file){mediaURL=URL.createObjectURL(file);$('video').src=mediaURL;$('previewStatus').textContent='Loading preview...';setStatus($('query').value.trim()?'Video selected. Ready to analyze.':'Video selected. Enter an action query to start.')}else{$('video').removeAttribute('src');$('video').load();$('previewStatus').textContent='Choose a video to preview it here.'}};
 $('video').onloadedmetadata=()=>{$('previewStatus').textContent='Preview ready.'};
 $('video').onerror=()=>{$('previewStatus').textContent='This browser could not play the video. You can still try analysis; the server checks whether it can decode the file.'};
@@ -99,8 +102,49 @@ $('start').onclick=async()=>{try{if(!$('file').files[0]){$('file').focus();throw
 let refreshing=false;
 async function refresh(){if(refreshing)return;refreshing=true;clearTimeout(poll);try{const state=await api('/jobs/'+job);setStatus(state.status+' / '+state.stage+' / '+state.calls+' model calls');if(['succeeded','partial','failed','cancelled'].includes(state.status)){if(state.error_code)setStatus($('status').textContent+' / '+state.error_code);if(['succeeded','partial'].includes(state.status)){report=await api('/results/'+job);render()}setBusy(false)}else{if(state.status==='queued')setStatus('Queued: waiting for the analysis worker. If this persists, use Test connection in Settings.');poll=setTimeout(refresh,1000)}}catch(e){setStatus(e.message);setBusy(false)}finally{refreshing=false}}
 $('cancel').onclick=async()=>{try{await api('/jobs/'+job+'/cancel',{method:'POST'});await refresh()}catch(e){setStatus(e.message)}};
-function render(){$('actions').replaceChildren();if(!report.predictions.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No matching actions were returned. Check the report warnings below and verify the provider in Settings.';$('actions').append(empty)}$('timeline').replaceChildren();for(const p of report.predictions){const button=document.createElement('button');button.textContent=`${p.label} / ${p.start_sec.toFixed(2)}-${p.end_sec.toFixed(2)} s / ${p.confidence===null?'unknown score':p.confidence.toFixed(2)} / ${p.spatial_status}`;button.onclick=()=>{$('video').currentTime=p.start_sec};$('actions').append(button);const bar=document.createElement('button');bar.title=button.textContent;bar.style.left=p.start_sec/report.video.duration_sec*100+'%';bar.style.width=(p.end_sec-p.start_sec)/report.video.duration_sec*100+'%';bar.onclick=button.onclick;$('timeline').append(bar)}$('details').textContent=JSON.stringify({warnings:report.warnings,coverage:report.coverage,recognition:report.recognition,boundaries:report.predictions.map(p=>({label:p.label,start:p.start_boundary,end:p.end_boundary}))},null,2);if(resultURL)URL.revokeObjectURL(resultURL);resultURL=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));$('download').href=resultURL;$('download').download='shar-result.json';$('download').hidden=false}
-function draw(){const c=$('overlay'),v=$('video');c.width=v.clientWidth;c.height=v.clientHeight;const ctx=c.getContext('2d');if(report&&v.videoWidth){const scale=Math.min(c.width/v.videoWidth,c.height/v.videoHeight),w=v.videoWidth*scale,h=v.videoHeight*scale,ox=(c.width-w)/2,oy=(c.height-h)/2;ctx.strokeStyle='#78b784';ctx.lineWidth=2;for(const t of report.tracks)for(const s of t.samples)if(s.observed&&Math.abs(s.timestamp_sec-v.currentTime)<=.125){const b=s.bbox;ctx.strokeRect(ox+b.x*w,oy+b.y*h,b.width*w,b.height*h)}}requestAnimationFrame(draw)}draw();
+const palette=['#78e0a0','#7ab8ff','#ffc875','#e59aff'];
+const stamp=t=>{const minutes=Math.floor(t/60);return `${String(minutes).padStart(2,'0')}:${(t%60).toFixed(2).padStart(5,'0')}`};
+const score=value=>value==null?'not reported':`${(value*100).toFixed(1)}%`;
+function observedSamples(p){return (report.tracks||[]).filter(t=>p.actor_ids.includes(t.actor_id)).flatMap(t=>t.samples.filter(s=>s.observed&&s.timestamp_sec>=p.start_sec&&s.timestamp_sec<p.end_sec))}
+function render(){
+  $('actions').replaceChildren();$('timeline').replaceChildren();
+  const mock=report.provenance?.mock_semantics||report.provenance?.provider==='mock';
+  $('resultSummary').textContent=mock?'Mock provider: this run did not perform action recognition. Configure Gemini on the server and worker, then analyze again.':`${report.predictions.length} action interval(s) · ${report.tracks.length} actor track(s) · ${report.status}`;
+  if(!report.predictions.length){const empty=document.createElement('p');empty.className='hint';empty.textContent=mock?'No action labels or bounding boxes are available for this mock run.':'No matching actions were detected. Review the query, coverage and diagnostics before trying again.';$('actions').append(empty)}
+  $('timeline').style.height=Math.max(34,report.predictions.length*32+8)+'px';
+  report.predictions.forEach((p,i)=>{
+    const color=palette[i%palette.length], samples=observedSamples(p);
+    const button=document.createElement('button');button.style.borderLeft=`4px solid ${color}`;
+    const title=document.createElement('strong');title.textContent=p.label;
+    const info=document.createElement('div');info.className='hint';info.textContent=`${stamp(p.start_sec)} – ${stamp(p.end_sec)} · ${(p.end_sec-p.start_sec).toFixed(2)} s · Action confidence: ${score(p.confidence)}`;
+    const spatial=document.createElement('div');spatial.className='hint';spatial.textContent=`Spatial localisation: ${p.spatial_status} · ${p.actor_ids.length} actor(s) · ${samples.length} observed boxes`;
+    button.append(title,info,spatial);if(p.description){const description=document.createElement('div');description.textContent=p.description;button.append(description)}
+    button.onclick=()=>{$('video').currentTime=p.start_sec};$('actions').append(button);
+    if(samples.length){const seek=document.createElement('button');seek.textContent='Show first observed box';seek.onclick=()=>{$('video').pause();$('video').currentTime=Math.min(...samples.map(s=>s.timestamp_sec))};$('actions').append(seek)}
+    const bar=document.createElement('button');bar.title=`${p.label}: ${info.textContent}`;bar.setAttribute('aria-label',bar.title);bar.style.background=color;bar.style.top=(4+i*32)+'px';bar.style.left=p.start_sec/report.video.duration_sec*100+'%';bar.style.width=(p.end_sec-p.start_sec)/report.video.duration_sec*100+'%';bar.onclick=button.onclick;$('timeline').append(bar);
+  });
+  $('details').textContent=JSON.stringify({provider:report.provenance?.provider,model:report.provenance?.model,warnings:report.warnings,coverage:report.coverage,recognition:report.recognition,boundaries:report.predictions.map(p=>({label:p.label,start:p.start_boundary,end:p.end_boundary}))},null,2);
+  if(resultURL)URL.revokeObjectURL(resultURL);resultURL=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));$('download').href=resultURL;$('download').download='shar-result.json';$('download').hidden=false;
+}
+function draw(){
+  const c=$('overlay'),v=$('video');c.width=v.clientWidth;c.height=v.clientHeight;const ctx=c.getContext('2d');
+  if(report&&v.videoWidth){
+    const scale=Math.min(c.width/v.videoWidth,c.height/v.videoHeight),w=v.videoWidth*scale,h=v.videoHeight*scale,ox=(c.width-w)/2,oy=(c.height-h)/2;
+    const active=report.predictions.filter(p=>p.start_sec<=v.currentTime&&v.currentTime<p.end_sec);let boxes=0;
+    ctx.font='bold 12px system-ui';ctx.lineWidth=3;
+    for(const p of active){const color=palette[report.predictions.indexOf(p)%palette.length];
+      for(const actor of p.actor_ids){const track=report.tracks.find(t=>t.actor_id===actor);if(!track)continue;
+        const sample=track.samples.filter(s=>s.observed&&s.timestamp_sec>=p.start_sec&&s.timestamp_sec<p.end_sec&&Math.abs(s.timestamp_sec-v.currentTime)<=.125).sort((a,b)=>Math.abs(a.timestamp_sec-v.currentTime)-Math.abs(b.timestamp_sec-v.currentTime))[0];if(!sample)continue;
+        boxes++;const b=sample.bbox,x=ox+b.x*w,y=oy+b.y*h;ctx.strokeStyle=color;ctx.strokeRect(x,y,b.width*w,b.height*h);
+        const label=`${p.label} · action ${score(p.confidence)} · box ${score(sample.confidence)} · @ ${stamp(sample.timestamp_sec)}`;
+        const width=Math.min(c.width,ctx.measureText(label).width+12),lx=Math.max(0,Math.min(x,c.width-width)),ly=Math.max(0,y-26);
+        ctx.fillStyle='#07120fee';ctx.fillRect(lx,ly,width,24);ctx.fillStyle=color;ctx.fillText(label,lx+6,ly+16,width-12);
+      }
+    }
+    $('playbackStatus').textContent=`${stamp(v.currentTime)} / ${stamp(report.video.duration_sec)} · ${active.length?active.map(p=>`${p.label} (${score(p.confidence)})`).join(' · '):'No detected action at this time'} · ${boxes} observed box(es)`;
+  }
+  requestAnimationFrame(draw);
+}draw();
 let streamPoll=null,streamCursor=0,streamLines=[],previewURL=null;
 $('monitor').onclick=()=>{clearInterval(streamPoll);streamCursor=0;streamLines=[];const id=$('streamId').value.trim();if(!id)return;async function updateStream(){try{const result=await api('/streams/'+encodeURIComponent(id)+'/events?after='+streamCursor);for(const e of result.events){streamCursor=e.sequence;streamLines.push(JSON.stringify(e));if(['session_end','session_error'].includes(e.type))clearInterval(streamPoll)}streamLines=streamLines.slice(-100);$('streamEvents').textContent=streamLines.join('\n');const headers={};if($('token').value.trim())headers.Authorization='Bearer '+$('token').value.trim();const preview=await fetch(apiURL('/streams/'+encodeURIComponent(id)+'/preview'),{headers});if(preview.ok){if(previewURL)URL.revokeObjectURL(previewURL);previewURL=URL.createObjectURL(await preview.blob());$('streamPreview').src=previewURL;$('streamPreview').hidden=false}}catch(e){clearInterval(streamPoll);$('streamEvents').textContent=e.message}}streamPoll=setInterval(updateStream,1000);updateStream()};
 </script>

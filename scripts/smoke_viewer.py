@@ -70,6 +70,30 @@ async def main():
                     timeout=30000,
                 )
                 assert await page.locator("#download").is_visible()
+                assert "Mock provider" in await page.locator("#resultSummary").inner_text()
+                assert await page.locator("#spatial").is_checked()
+                # Synthetic display fixture: never a claim about the uploaded footage.
+                await page.evaluate("""() => {
+                    report = {predictions:[{label:'waving',start_sec:0,end_sec:3,
+                        confidence:.87,actor_ids:['actor-1'],spatial_status:'partial'}],
+                        tracks:[{actor_id:'actor-1',samples:[{observed:true,timestamp_sec:1,
+                        confidence:.91,bbox:{x:.1,y:.1,width:.3,height:.7}}]}],
+                        video:{duration_sec:4},status:'succeeded',provenance:{provider:'fixture'}};
+                    render();
+                }""")
+                assert "87.0%" in await page.locator("#actions").inner_text()
+                assert "00:00.00 – 00:03.00" in await page.locator("#actions").inner_text()
+                await page.get_by_role("button", name="Show first observed box").click()
+                await page.wait_for_function(
+                    "document.getElementById('playbackStatus').textContent.includes('1 observed box')"
+                )
+                assert await page.locator("#overlay").evaluate(
+                    "c => c.getContext('2d').getImageData(0,0,c.width,c.height).data.some(v => v > 0)"
+                )
+                await page.evaluate("document.getElementById('video').currentTime = 2")
+                await page.wait_for_function(
+                    "document.getElementById('playbackStatus').textContent.includes('0 observed box')"
+                )
                 import io
 
                 from PIL import Image

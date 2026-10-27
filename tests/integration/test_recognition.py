@@ -105,3 +105,35 @@ async def test_model_version_drift_is_not_silent(settings, asset):
     )
     with pytest.raises(SharError, match="version changed"):
         await Pipeline(settings, model).run(asset, "actions")
+
+
+async def test_spatial_samples_cover_action_interior(settings, asset):
+    from shar.schemas import ActionPrediction, ModelPayload
+
+    spatial_times = []
+
+    def scripted(request):
+        if request.task == "spatial":
+            spatial_times.extend(f.timestamp_sec for f in request.frames)
+            return ModelPayload()
+        return ModelPayload(
+            predictions=[
+                ActionPrediction(
+                    label="walking",
+                    start_sec=0.0,
+                    end_sec=4.0,
+                    evidence_frame_ids=[f.frame_id for f in request.frames],
+                )
+            ]
+        )
+
+    settings = settings.model_copy(
+        update={
+            "enable_spatial": True,
+            "enable_boundary_search": False,
+        }
+    )
+    report = await Pipeline(settings, MockModel(responses=[scripted] * 2)).run(asset, "walking")
+    assert any(1.5 <= timestamp <= 2.5 for timestamp in spatial_times)
+    assert all(0 <= timestamp < 4 for timestamp in spatial_times)
+    assert report.predictions[0].spatial_status == "unlocalized"

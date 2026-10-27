@@ -349,26 +349,13 @@ class Pipeline:
                         "no_new_evidence",
                     }:
                         warnings.append("BOUNDARY_" + reason.upper())
-                if localizer:
-                    try:
-                        actor_tracks = await localizer.localize(candidate, await dense(candidate))
-                    except SharError as exc:
-                        if isinstance(exc, Cancelled):
-                            raise
-                        warnings.append(exc.code)
-                    candidate = candidate.model_copy(
-                        update={
-                            "actor_ids": [t.actor_id for t in actor_tracks],
-                            "spatial_status": "partial" if actor_tracks else "unlocalized",
-                        }
-                    )
                 if self.settings.enable_refinement:
                     candidate, actor_tracks, history, reason = await refine(
                         candidate,
                         actor_tracks,
                         dense,
                         self.infer,
-                        localizer,
+                        None,
                         self.settings.model_copy(
                             update={
                                 "boundary_calls": max(
@@ -388,6 +375,29 @@ class Pipeline:
                         "no_new_evidence",
                     }:
                         warnings.append("REFINEMENT_" + reason.upper())
+                if localizer:
+                    try:
+                        # Sample the whole final interval, not just boundary neighborhoods.
+                        spatial_frames = await asyncio.to_thread(
+                            sample,
+                            path,
+                            asset.metadata,
+                            candidate.start_sec,
+                            candidate.end_sec,
+                            self.settings.fine_fps,
+                            self.settings,
+                        )
+                        actor_tracks = await localizer.localize(candidate, spatial_frames)
+                    except SharError as exc:
+                        if isinstance(exc, Cancelled):
+                            raise
+                        warnings.append(exc.code)
+                    candidate = candidate.model_copy(
+                        update={
+                            "actor_ids": [t.actor_id for t in actor_tracks],
+                            "spatial_status": "partial" if actor_tracks else "unlocalized",
+                        }
+                    )
                 if localizer and not actor_tracks:
                     warnings.append("SPATIAL_UNLOCALIZED")
                 refined.append(candidate)
