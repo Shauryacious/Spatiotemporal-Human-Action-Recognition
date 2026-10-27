@@ -1,10 +1,15 @@
 import asyncio
+import logging
+import math
 import os
 import tempfile
 import time
 from dataclasses import replace
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from shar.errors import SharError
 from shar.inference import prompts
@@ -13,7 +18,99 @@ from shar.schemas import ModelPayload, Usage
 from shar.telemetry import event
 
 
-def provider_schema():
+def provider_error(exc):
+    """Keep actionable quota information without exposing provider response bodies."""
+    code = getattr(exc, "code", None)
+    body = getattr(exc, "details", {})
+    body = body.get("error", body) if isinstance(body, dict) else {}
+    body = body if isinstance(body, dict) else {}
+    details = body.get("details", [])
+    if not isinstance(details, list):
+        details = []
+    retry_after = 0.0
+    headers = getattr(getattr(exc, "response", None), "headers", {}) or {}
+    header = headers.get("Retry-After")
+    if header is not None:
+        try:
+            retry_after = float(header)
+        except (ValueError, TypeError):
+            try:
+                retry_after = parsedate_to_datetime(header).timestamp() - time.time()
+            except (ValueError, TypeError, OverflowError):
+                pass
+    retry_after = max(0.0, retry_after) if math.isfinite(retry_after) else 0.0
+    violations = []
+    for detail in details:
+        if not isinstance(detail, dict):
+            continue
+        if str(detail.get("@type", "")).endswith("google.rpc.RetryInfo"):
+            delay = detail.get("retryDelay", "")
+            try:
+                seconds = float(delay[:-1]) if isinstance(delay, str) and delay.endswith("s") else 0
+                if math.isfinite(seconds):
+                    retry_after = max(retry_after, seconds)
+            except ValueError:
+                pass
+        if str(detail.get("@type", "")).endswith("google.rpc.QuotaFailure"):
+            items = detail.get("violations", [])
+            if isinstance(items, list):
+                violations.extend(item for item in items if isinstance(item, dict))
+    retry_after = max(0.0, retry_after) if math.isfinite(retry_after) else 0.0
+    daily = any(
+        "perday" in str(v.get("quotaId", "")).lower().replace("_", "")
+        or "perday" in str(v.get("quotaMetric", "")).lower().replace("_", "")
+        for v in violations
+    )
+    unavailable = any(str(v.get("quotaValue", "")) == "0" for v in violations)
+    network_error = isinstance(exc, (TimeoutError, ConnectionError, httpx.TransportError))
+    # The async GenAI SDK may use aiohttp when its optional transport is installed.
+    try:
+        import aiohttp
+
+        network_error = network_error or isinstance(exc, aiohttp.ClientConnectionError)
+    except ImportError:
+        pass
+    transient = code in {429, 500, 502, 503, 504} or network_error
+    error_code, message = {
+        429: ("PROVIDER_RATE_LIMIT", "Gemini rate limit reached."),
+        401: ("PROVIDER_AUTH", "Gemini rejected the server's API credentials."),
+        403: ("PROVIDER_AUTH", "Gemini denied access. Check the server's API key and permissions."),
+        404: ("PROVIDER_MODEL_NOT_FOUND", "The configured Gemini model is unavailable."),
+        500: ("PROVIDER_TRANSIENT", "Gemini returned a server error (HTTP 500)."),
+        502: ("PROVIDER_TRANSIENT", "Gemini's gateway failed (HTTP 502)."),
+        503: ("PROVIDER_TRANSIENT", "Gemini is temporarily unavailable (HTTP 503)."),
+        504: ("PROVIDER_TRANSIENT", "Gemini's gateway timed out (HTTP 504)."),
+    }.get(
+        code, ("PROVIDER_TRANSIENT" if transient else "PROVIDER_ERROR", "Provider request failed.")
+    )
+    if network_error:
+        error_code = (
+            "PROVIDER_TIMEOUT"
+            if isinstance(exc, (TimeoutError, httpx.TimeoutException))
+            else "PROVIDER_TRANSIENT"
+        )
+        message = (
+            "The connection to Gemini timed out."
+            if error_code == "PROVIDER_TIMEOUT"
+            else "The connection to Gemini was interrupted."
+        )
+    if code == 429 and (daily or unavailable):
+        transient = False
+        error_code = "PROVIDER_DAILY_QUOTA" if daily else "PROVIDER_QUOTA_EXHAUSTED"
+        message = (
+            "Gemini's daily quota for this project and model is exhausted."
+            if daily
+            else "This project has no available Gemini quota for the configured model."
+        )
+        message += " Check usage and billing in Google AI Studio."
+    error = SharError(
+        error_code, message, transient, 429 if code == 429 else 503 if transient else 422
+    )
+    error.retry_after = retry_after
+    return error
+
+
+def provider_schema(task=None):
     """Adapt Gemini's response_schema subset; strict validation remains local."""
 
     def convert(value):
@@ -46,7 +143,7 @@ def provider_schema():
             result["maximum"] = value["exclusiveMaximum"]
         return result
 
-    return convert(ModelPayload.model_json_schema())
+    return convert(prompts.output_schema(task))
 
 
 class GeminiModel:
@@ -160,9 +257,14 @@ class GeminiModel:
                 contents=contents,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    response_schema=provider_schema(),
+                    response_schema=provider_schema(request.task),
                     temperature=0,
                     max_output_tokens=self.settings.output_tokens,
+                    thinking_config=types.ThinkingConfig(
+                        thinking_level=types.ThinkingLevel(self.settings.thinking_level.upper())
+                    )
+                    if self.settings.thinking_level
+                    else None,
                 ),
             )
             usage = response.usage_metadata
@@ -203,21 +305,15 @@ class GeminiModel:
         except SharError:
             raise
         except Exception as exc:
-            code = getattr(exc, "code", None)
-            transient = code in {429, 500, 502, 503, 504} or isinstance(
-                exc, (TimeoutError, ConnectionError)
+            error = provider_error(exc)
+            event(
+                "provider_failure",
+                level=logging.WARNING,
+                error_code=error.code,
+                http_status=getattr(exc, "code", None),
+                exception_type=type(exc).__name__,
+                retry_after_sec=error.retry_after,
             )
-            error = SharError(
-                "PROVIDER_TRANSIENT" if transient else "PROVIDER_ERROR",
-                "Provider request failed",
-                transient,
-                503 if transient else 422,
-            )
-            headers = getattr(getattr(exc, "response", None), "headers", {}) or {}
-            try:
-                error.retry_after = float(headers.get("Retry-After", 0))
-            except (ValueError, TypeError):
-                error.retry_after = 0.0
             raise error from exc
         finally:
             if remote:

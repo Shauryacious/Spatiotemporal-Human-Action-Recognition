@@ -53,6 +53,8 @@ class Worker:
                     job_id, token, settings.max_calls, cost, settings.max_cost
                 ),
                 checkpoint=lambda details: self.repo.checkpoint(job_id, token, details),
+                resume_root_id=job["request"].get("_resume_root_id", job_id),
+                resume_required=bool(job["request"].get("_retry_of")),
             )
             pipeline.budget.calls = job["calls"]
             asset = self.repo.video(job["video_id"], job["owner_id"])
@@ -73,6 +75,9 @@ class Worker:
                     "unavailable; durable call and reserved-cost totals retained"
                 )
             report.provenance["reserved_cost"] = self.repo.job(job_id)["reserved_cost"]
+            self.repo.checkpoint(
+                job_id, token, {"stage": "finalizing", "message": "Saving analysis results"}
+            )
             uri = f"results/{job_id}/{token}.json"
             checksum = self.store.put(uri, report.model_dump_json(indent=2).encode())
             self.repo.publish(job_id, token, report, uri, checksum)

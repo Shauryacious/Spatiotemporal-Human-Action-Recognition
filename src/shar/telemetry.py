@@ -18,8 +18,8 @@ def redact(value):
     return value
 
 
-def event(name: str, **fields):
-    logging.getLogger("shar").info(json.dumps({"event": name, **redact(fields)}, default=str))
+def event(name: str, *, level: int = logging.INFO, **fields):
+    logging.getLogger("shar").log(level, json.dumps({"event": name, **redact(fields)}, default=str))
 
 
 @contextmanager

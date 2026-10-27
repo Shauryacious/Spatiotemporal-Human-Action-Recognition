@@ -87,3 +87,34 @@ def test_connection_checks_auth_readiness_and_provider(settings, monkeypatch):
     response = client.get("/connection", headers=headers)
     assert response.status_code == 200
     assert response.json() == {"status": "ready", "provider": "mock", "model": "fixture-v1"}
+
+
+def test_connection_exposes_saved_quota_and_reset_requires_auth(settings, monkeypatch):
+    import time
+
+    from shar.errors import SharError
+    from shar.inference.multimodal.limits import ProviderCooldown
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setenv("SHAR_AUTH_TOKENS", json.dumps({"app-token": "local"}))
+    settings = settings.model_copy(
+        update={
+            "provider": "gemini",
+            "model": "test-model",
+            "auth_mode": "token",
+        }
+    )
+    app = create_app(settings)
+    app.state.store.put("worker-heartbeat", str(time.time()).encode())
+    error = SharError("PROVIDER_DAILY_QUOTA", "Daily quota exhausted.", False, 429)
+    error.retry_after = 53000
+    ProviderCooldown(settings).record(error)
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer app-token"}
+    response = client.get("/connection", headers=headers)
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == error.code
+    assert response.json()["error"]["retry_at"] > time.time() + 52000
+    assert client.post("/connection/recheck").status_code == 401
+    assert client.post("/connection/recheck", headers=headers).status_code == 200
+    assert client.get("/connection", headers=headers).status_code == 200

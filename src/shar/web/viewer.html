@@ -7,6 +7,8 @@
 <style>
 :root{color-scheme:dark;--bg:#0d1117;--panel:#151b23;--line:#303b49;--text:#edf2f7;--muted:#9aa8b8;--accent:#4f8bd6;--accent-2:#78b784;--danger:#dd6b6b;--shadow:0 18px 60px rgba(0,0,0,.28);font:15px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(180deg,#101722 0,#0d1117 240px);letter-spacing:0}button,input,textarea{font:inherit;color:inherit}button{border:0;cursor:pointer}button:disabled{cursor:not-allowed;opacity:.5}a{color:#9fc7ff}.app{min-height:100vh;display:grid;grid-template-columns:280px minmax(0,1fr)}.sidebar{position:sticky;top:0;height:100vh;background:#111821;border-right:1px solid var(--line);padding:18px;transition:transform .2s ease}.brand{display:flex;align-items:center;gap:12px;margin-bottom:22px}.logo{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,#4f8bd6,#78b784);display:grid;place-items:center;font-weight:800;color:#08111a}.brand strong{display:block}.brand span{display:block;color:var(--muted);font-size:12px}.nav{display:grid;gap:6px}.nav button,.icon-btn{background:transparent;border:1px solid transparent;border-radius:8px;color:var(--muted);min-height:40px}.nav button{display:flex;align-items:center;gap:10px;text-align:left;padding:10px 12px}.nav button:hover,.nav button.active,.icon-btn:hover{background:#1a2330;color:var(--text);border-color:#2b394b}.nav svg,.icon-btn svg{width:18px;height:18px}.side-note{position:absolute;left:18px;right:18px;bottom:18px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:14px}.main{min-width:0}.topbar{height:64px;display:flex;align-items:center;gap:14px;padding:0 26px;border-bottom:1px solid rgba(48,59,73,.72);backdrop-filter:blur(12px);background:rgba(13,17,23,.72);position:sticky;top:0;z-index:5}.icon-btn{width:40px;display:grid;place-items:center}.title{min-width:0}.title h1{font-size:20px;margin:0}.title p{margin:1px 0 0;color:var(--muted);font-size:13px}.status-pill{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;background:var(--accent-2)}.content{padding:26px;max-width:1180px}.view{display:none}.view.active{display:block}.grid{display:grid;grid-template-columns:minmax(300px,420px) minmax(0,1fr);gap:20px;align-items:start}.panel{background:rgba(21,27,35,.96);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}.panel-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px}.panel-head h2{font-size:16px;margin:0}.panel-head p{margin:3px 0 0;color:var(--muted);font-size:13px}.panel-body{padding:20px}.field{display:grid;gap:7px;margin-bottom:15px}.field label,.check span{font-weight:650;font-size:13px}.hint{color:var(--muted);font-size:12px}.field input,.field textarea{width:100%;border:1px solid #3a4656;background:#0e141c;border-radius:7px;padding:10px 11px;outline:none}.field textarea{min-height:118px;resize:vertical}.field input:focus,.field textarea:focus{border-color:#6ea4e9;box-shadow:0 0 0 3px rgba(79,139,214,.18)}.checks{display:grid;grid-template-columns:1fr 1fr;gap:10px}.check{display:flex;align-items:center;gap:10px;background:#101720;border:1px solid #303b49;border-radius:8px;padding:11px}.check input{accent-color:var(--accent);width:16px;height:16px}.actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.primary,.secondary,.danger{min-height:40px;border-radius:7px;padding:0 14px;display:inline-flex;align-items:center;gap:8px}.primary{background:var(--accent);color:white}.secondary{background:#202b39;color:var(--text);border:1px solid #394657}.danger{background:rgba(221,107,107,.14);color:#ffd6d6;border:1px solid rgba(221,107,107,.35)}#stage{position:relative;background:#070a0f;border-radius:8px;overflow:hidden;min-height:260px}video{width:100%;max-height:560px;display:block;background:#070a0f}canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}#timeline{height:34px;position:relative;background:#0e141c;border:1px solid #303b49;border-radius:7px;margin:14px 0;overflow:hidden}#timeline button{position:absolute;height:24px;top:4px;padding:0;border-radius:5px;background:#6ea4e9;min-width:3px}#actions{display:grid;gap:8px;margin-top:12px}#actions button{width:100%;text-align:left;background:#101720;border:1px solid #303b49;border-radius:7px;padding:11px;color:var(--text)}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0e141c;border:1px solid #303b49;border-radius:8px;padding:14px;max-height:360px;overflow:auto}.split{display:grid;grid-template-columns:1fr 1fr;gap:18px}.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.callout{border-left:3px solid var(--accent);background:#121a25;padding:12px 14px;border-radius:0 7px 7px 0;color:#c9d6e4}.sidebar-closed .app{grid-template-columns:0 minmax(0,1fr)}.sidebar-closed .sidebar{transform:translateX(-100%);padding-left:0;padding-right:0;overflow:hidden}.sidebar-closed .side-note,.sidebar-closed .brand,.sidebar-closed .nav{visibility:hidden}@media (max-width:900px){.app{grid-template-columns:1fr}.sidebar{position:fixed;z-index:20;width:280px;box-shadow:var(--shadow)}body:not(.sidebar-open) .sidebar{transform:translateX(-100%)}.content{padding:18px}.grid,.split{grid-template-columns:1fr}.status-pill{display:none}.topbar{padding:0 16px}}
+
+.pipeline{margin-top:20px;border-top:1px solid var(--line);padding-top:16px}.pipeline h3{margin:0 0 8px;font-size:15px}.pipeline progress{width:100%;height:12px;accent-color:var(--accent)}.pipeline ol{padding-left:22px;font-size:13px}.pipeline li{padding:4px;color:var(--muted)}.pipeline li[data-state="active"]{color:#9fc7ff;font-weight:700}.pipeline li[data-state="done"]{color:#78e0a0}.pipeline li[data-state="failed"]{color:var(--danger);font-weight:700}.activity{max-height:200px;overflow:auto;padding-left:20px;font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body class="sidebar-open">
@@ -15,6 +17,7 @@
     <div class="brand"><div class="logo">S</div><div><strong>SHAR</strong><span>Research workspace</span></div></div>
     <nav class="nav">
       <button class="active" data-view="analyze"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/></svg>Analyze</button>
+      <button data-view="history">History</button>
       <button data-view="stream"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M5 12a7 7 0 0 1 7-7M5 12a7 7 0 0 0 7 7M19 12a7 7 0 0 0-7-7M19 12a7 7 0 0 1-7 7"/></svg>Streams</button>
       <button data-view="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a8 8 0 0 0 .1-6M4.5 9a8 8 0 0 0 .1 6M8.6 4.8a8 8 0 0 1 6.8 0M15.4 19.2a8 8 0 0 1-6.8 0"/></svg>Settings</button>
     </nav>
@@ -32,9 +35,21 @@
           <div class="panel"><div class="panel-head"><div><h2>Run analysis</h2><p>Upload a video and describe the actions to find.</p></div></div><div class="panel-body">
             <div class="field"><label for="file">Video file</label><input id="file" type="file" accept="video/*"></div>
             <div class="field"><label for="query">Action query</label><textarea id="query" aria-describedby="queryHint" required placeholder="Find people walking, and identify when each action occurs."></textarea><span class="hint" id="queryHint">Required: type the action you want to find. The example above is a placeholder.</span></div>
-            <div class="checks"><label class="check"><input id="spatial" type="checkbox" checked><span>Localize actors</span></label><label class="check"><input id="refine" type="checkbox" checked><span>Refine boundaries</span></label></div>
+            <div class="checks"><label class="check"><input id="spatial" type="checkbox"><span>Localize actors</span></label><label class="check"><input id="refine" type="checkbox"><span>Refine boundaries</span></label></div>
+            <p class="hint">Recognition uses one call per video window. Refinement and actor localization each use at most one additional call per detected action. Failures stop for your decision; no automatic retries.</p>
+            <div class="field"><label for="maxCalls">Maximum new model calls for this run</label><input id="maxCalls" type="number" min="1" max="100" value="3"><span class="hint">The run stops at this limit and preserves completed work. Failed requests may still count toward your provider quota.</span></div>
             <div class="actions-row"><button class="primary" id="start">Analyze video</button><button class="danger" id="cancel" disabled>Cancel</button></div>
-            <p class="hint" id="inlineStatus" role="status" aria-live="polite">Ready. Actor boxes and temporal boundaries are enabled.</p>
+            <p class="hint code" id="runId" style="overflow-wrap:anywhere"></p>
+            <p class="hint" id="inlineStatus" role="status" aria-live="polite">Ready. Basic analysis uses fewer model calls. Actor boxes and refinement are optional.</p>
+            <section class="pipeline" id="pipeline" hidden aria-label="Analysis progress">
+              <h3 id="progressTitle">Preparing analysis</h3>
+              <progress id="workProgress" aria-label="Current stage progress"></progress>
+              <p class="hint" id="progressMeta"></p>
+              <ol id="checkpoints"></ol>
+              <p id="currentActivity" role="status" aria-live="polite"></p>
+              <details open><summary>Recent activity</summary><ul class="activity" id="activity"></ul></details>
+            </section>
+            <section id="retryDecision" class="callout" hidden aria-live="polite"></section>
           </div></div>
           <div class="panel"><div class="panel-head"><div><h2>Review</h2><p>Action labels, confidence, actor boxes and temporal intervals.</p></div><a id="download" hidden>Download JSON</a></div><div class="panel-body">
             <div id="stage"><video id="video" controls preload="metadata"></video><canvas id="overlay"></canvas></div>
@@ -44,6 +59,12 @@
             <details><summary>Analysis diagnostics</summary><pre id="details"></pre></details>
           </div></div>
         </div>
+      </section>
+      <section class="view" id="view-history">
+        <div class="panel"><div class="panel-head"><div><h2>Run history</h2><p>Saved analyses, including failed and cancelled runs. Available within the server retention period.</p></div><button class="secondary" id="refreshHistory">Refresh</button></div>
+          <div class="panel-body"><p id="historyStatus" role="status"></p><div id="historyList" style="display:grid;gap:12px"></div><button class="secondary" id="moreHistory" hidden>Load more</button></div>
+        </div>
+        <div class="panel" id="historyDetail" hidden style="margin-top:20px"><div class="panel-head"><h2>Run details</h2><button class="secondary" id="reviewRun" hidden>Open in Review</button></div><div class="panel-body"><section id="historyRetry" class="callout" hidden></section><pre id="historyData"></pre><h3>Result</h3><pre id="historyResult"></pre><a id="historyDownload" hidden>Download run details</a></div></div>
       </section>
       <section class="view" id="view-stream">
         <div class="panel"><div class="panel-head"><div><h2>Stream events</h2><p>Start a registered source with the stream CLI, then monitor its session.</p></div></div><div class="panel-body">
@@ -58,18 +79,19 @@
           <div class="panel"><div class="panel-head"><div><h2>Frontend connection</h2><p>Saved in this browser only.</p></div></div><div class="panel-body">
             <div class="field"><label for="apiBase">API base URL</label><input id="apiBase" placeholder="Leave blank for this server"></div>
             <div class="field"><label for="token">Bearer token</label><input id="token" type="password" autocomplete="off" placeholder="Only for SHAR_AUTH_MODE=token"></div>
-            <div class="actions-row"><button class="primary" id="saveSettings">Save settings</button><button class="secondary" id="testConnection">Test connection</button><button class="secondary" id="clearSettings">Clear</button></div>
+            <div class="actions-row"><button class="primary" id="saveSettings">Save settings</button><button class="secondary" id="testConnection">Test connection</button><button class="secondary" id="clearSettings">Clear</button><button class="secondary" id="recheckProvider">I updated my provider quota</button></div>
             <p class="hint" id="settingsStatus">Local mode does not need a token when you run on 127.0.0.1.</p>
           </div></div>
           <div class="panel"><div class="panel-head"><div><h2>Backend API keys</h2><p>Set provider secrets before starting the server.</p></div></div><div class="panel-body">
             <div class="callout">Get a Gemini key from Google AI Studio, then put it in `.env` or your shell as `GEMINI_API_KEY`. Do not paste provider keys into a public frontend.</div>
             <p class="hint">Minimal Gemini configuration:</p>
             <pre class="code">SHAR_PROVIDER=gemini
-SHAR_MODEL=gemini-1.5-pro
+SHAR_MODEL=your-accessible-model-id
 GEMINI_API_KEY=your-google-ai-studio-key
-SHAR_RPM=60
-SHAR_TPM=1000000
-SHAR_RPD=1000</pre>
+SHAR_RPM=your-requests-per-minute-limit
+SHAR_TPM=your-tokens-per-minute-limit
+SHAR_RPD=your-requests-per-day-limit</pre>
+            <p class="hint">Use the actual limits from Google AI Studio. These local settings do not increase your provider quota.</p>
             <p class="hint">For a remote deployment, also enable app authentication:</p>
             <pre class="code">SHAR_AUTH_MODE=token
 SHAR_AUTH_TOKENS={"long-random-token":"owner-1"}</pre>
@@ -85,23 +107,147 @@ const $=id=>document.getElementById(id);let job=null,report=null,poll=null,media
 const settings=JSON.parse(localStorage.getItem('shar.settings')||'{}');
 $('apiBase').value=settings.apiBase||'';$('token').value=settings.token||'';
 function setStatus(text){$('status').textContent=text;$('inlineStatus').textContent=text}
+const stages=[['upload','Upload and validate video'],['queued','Wait for worker'],['analysis','Sample frames and recognize actions'],['merging','Merge action proposals'],['refinement','Refine action boundaries'],['localization','Localize actors'],['finalizing','Validate and save results']];
+let runStarted=0,lastState=null;
+function showProgress(stage,message,state={}){
+  $('pipeline').hidden=false;$('workProgress').hidden=false;
+  const decision=state.retry_decision;
+  const finished=['succeeded','partial'].includes(state.status)&&!decision,stopped=['failed','cancelled'].includes(state.status)||!!decision;
+  const activity=state.activity||[];
+  const latest=activity.filter(e=>e.details?.message).at(-1);
+  const effective=decision?.stage||(stage==='model'||stopped?(activity.filter(e=>stages.some(([key])=>key===e.details?.stage)).at(-1)?.details.stage||'analysis'):stage);
+  const index=stages.findIndex(([key])=>key===effective);
+  $('progressTitle').textContent=decision?'Needs your decision':finished?(state.status==='partial'?'Completed with warnings':'Analysis complete'):stopped?`Analysis ${state.status}`:state.status==='retry_wait'?'Waiting to retry':(stages[index]?.[1]||'Analysis in progress');
+  $('checkpoints').replaceChildren();
+  for(const [i,[key,label]] of stages.entries()){
+    const li=document.createElement('li');
+    const skipped=(key==='localization'&&!$('spatial').checked)||(key==='refinement'&&!$('refine').checked);
+    li.dataset.state=skipped?'skipped':finished||i<index?'done':i===index?(state.status==='cancelled'?'cancelled':stopped?'failed':'active'):'pending';
+    li.textContent=`${li.dataset.state==='done'?'✓ ':li.dataset.state==='active'?'● ':li.dataset.state==='failed'?'× ':''}${label}${skipped?' (disabled)':''}`;
+    if(li.dataset.state==='active')li.setAttribute('aria-current','step');
+    $('checkpoints').append(li);
+  }
+  const unit=latest?.details;
+  const bar=$('workProgress');
+  if(finished){bar.max=1;bar.value=1}else if(!stopped&&unit?.total&&unit.stage===effective){bar.max=unit.total;bar.value=unit.completed}else{bar.removeAttribute('value')}
+  bar.hidden=stopped;
+  $('currentActivity').textContent=state.status==='cancelled'?'Cancelled by you. No further model calls will be sent. A request already sent may still count toward quota.':decision?.message||message||latest?.details.message||'Waiting for the next checkpoint';
+  const elapsed=Math.max(0,Math.floor(((state.completed_at?state.completed_at*1000:Date.now())-(state.created_at?state.created_at*1000:runStarted))/1000));
+  $('progressMeta').textContent=`${elapsed}s elapsed · ${state.calls||0} model calls${state.attempt?' · attempt '+state.attempt:''}${unit?.total&&unit.stage===effective?' · '+unit.completed+'/'+unit.total+' work units complete':''}${!finished&&!stopped?' · Progress updates every second':''}`;
+  $('activity').replaceChildren();
+  for(const entry of activity.slice(-30).reverse()){
+    const li=document.createElement('li');li.textContent=new Date(entry.at*1000).toLocaleTimeString()+' — '+(entry.details?.message||entry.event);$('activity').append(li);
+  }
+}
+setInterval(()=>{if(lastState&&!['succeeded','partial','failed','cancelled'].includes(lastState.status))showProgress(lastState.stage,null,lastState)},1000);
 function apiURL(path){const base=$('apiBase').value.trim().replace(/\/$/,'');return base?base+path:path}
-async function api(path,options={}){const headers={...options.headers};if($('token').value.trim())headers.Authorization='Bearer '+$('token').value.trim();const r=await fetch(apiURL(path),{...options,headers});if(!r.ok){let e={};try{e=await r.json()}catch{}throw Error(e.error?.message||JSON.stringify(e.detail)||r.statusText)}return r.json()}
-document.querySelectorAll('.nav button').forEach(button=>button.onclick=()=>{document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));button.classList.add('active');document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));$('view-'+button.dataset.view).classList.add('active');const titles={analyze:['Video analysis','Analyze actions across time and inspect temporal evidence.'],stream:['Stream monitor','Follow live revisions and preview observations.'],settings:['Settings','Configure connection details and backend key setup.']};$('pageTitle').textContent=titles[button.dataset.view][0];$('pageSub').textContent=titles[button.dataset.view][1]});
+async function api(path,options={}){const headers={...options.headers};if($('token').value.trim())headers.Authorization='Bearer '+$('token').value.trim();const r=await fetch(apiURL(path),{...options,headers});if(!r.ok){let e={};try{e=await r.json()}catch{}throw Error((e.error?.message||JSON.stringify(e.detail)||r.statusText)+(e.error?.retry_at?' Try again after '+new Date(e.error.retry_at*1000).toLocaleString()+'.':''))}return r.json()}
+document.querySelectorAll('.nav button').forEach(button=>button.onclick=()=>{document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));button.classList.add('active');document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));$('view-'+button.dataset.view).classList.add('active');const titles={analyze:['Video analysis','Analyze actions across time and inspect temporal evidence.'],history:['Run history','Inspect saved runs, settings, activity and results.'],stream:['Stream monitor','Follow live revisions and preview observations.'],settings:['Settings','Configure connection details and backend key setup.']};$('pageTitle').textContent=titles[button.dataset.view][0];$('pageSub').textContent=titles[button.dataset.view][1];if(button.dataset.view==='history')loadHistory()});
 $('menu').onclick=()=>{if(matchMedia('(max-width:900px)').matches)document.body.classList.toggle('sidebar-open');else document.body.classList.toggle('sidebar-closed')};
 $('saveSettings').onclick=()=>{localStorage.setItem('shar.settings',JSON.stringify({apiBase:$('apiBase').value.trim(),token:$('token').value.trim()}));$('settingsStatus').textContent='Settings saved in this browser.'};
 $('clearSettings').onclick=()=>{$('apiBase').value='';$('token').value='';localStorage.removeItem('shar.settings');$('settingsStatus').textContent='Settings cleared.'};
 $('testConnection').onclick=async()=>{ $('settingsStatus').textContent='Checking authentication and analysis readiness...';try{const h=await api('/connection');$('settingsStatus').textContent=h.provider==='mock'?'Connection ready. Mock mode is active: no real actions will be detected. Configure Gemini on the server and worker for real analysis.':`Connection ready. Provider: ${h.provider}; model: ${h.model}. Provider credentials and quota are checked when analysis runs.`}catch(e){$('settingsStatus').textContent='Analysis connection unavailable: '+e.message}};
-function clearResults(){report=null;$('resultSummary').textContent='';$('playbackStatus').textContent='';$('actions').replaceChildren();$('timeline').replaceChildren();$('details').textContent='';$('download').hidden=true;if(resultURL){URL.revokeObjectURL(resultURL);resultURL=null}}
-$('file').onchange=()=>{clearResults();if(mediaURL){URL.revokeObjectURL(mediaURL);mediaURL=null}const file=$('file').files[0];if(file){mediaURL=URL.createObjectURL(file);$('video').src=mediaURL;$('previewStatus').textContent='Loading preview...';setStatus($('query').value.trim()?'Video selected. Ready to analyze.':'Video selected. Enter an action query to start.')}else{$('video').removeAttribute('src');$('video').load();$('previewStatus').textContent='Choose a video to preview it here.'}};
+$('recheckProvider').onclick=async()=>{try{await api('/connection/recheck',{method:'POST'});$('settingsStatus').textContent='Saved quota pause cleared. Analyze again to verify your updated provider access.'}catch(e){$('settingsStatus').textContent=e.message}};
+function clearResults(){report=null;$('retryDecision').hidden=true;$('resultSummary').textContent='';$('playbackStatus').textContent='';$('actions').replaceChildren();$('timeline').replaceChildren();$('details').textContent='';$('download').hidden=true;if(resultURL){URL.revokeObjectURL(resultURL);resultURL=null}}
+$('file').onchange=()=>{clearResults();lastState=null;$('pipeline').hidden=true;if(mediaURL){URL.revokeObjectURL(mediaURL);mediaURL=null}const file=$('file').files[0];if(file){mediaURL=URL.createObjectURL(file);$('video').src=mediaURL;$('previewStatus').textContent='Loading preview...';setStatus($('query').value.trim()?'Video selected. Ready to analyze.':'Video selected. Enter an action query to start.')}else{$('video').removeAttribute('src');$('video').load();$('previewStatus').textContent='Choose a video to preview it here.'}};
 $('video').onloadedmetadata=()=>{$('previewStatus').textContent='Preview ready.'};
 $('video').onerror=()=>{$('previewStatus').textContent='This browser could not play the video. You can still try analysis; the server checks whether it can decode the file.'};
-function setBusy(busy){$('start').disabled=busy;for(const id of ['file','query','spatial','refine'])$(id).disabled=busy;if(!busy)$('cancel').disabled=true}
+function setBusy(busy){$('start').disabled=busy;for(const id of ['file','query','spatial','refine','maxCalls'])$(id).disabled=busy;if(!busy)$('cancel').disabled=true}
 
-$('start').onclick=async()=>{try{if(!$('file').files[0]){$('file').focus();throw Error('Choose a video file to analyze.')}if(!$('query').value.trim()){$('query').focus();throw Error('Enter an action query, such as “Find people walking”. The example text is only a placeholder.')}setBusy(true);clearResults();setStatus('Uploading video...');const form=new FormData();form.append('file',$('file').files[0]);const asset=await api('/videos',{method:'POST',body:form});const queued=await api('/localize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_id:asset.video_id,prompt:$('query').value.trim(),enable_spatial:$('spatial').checked,enable_refinement:$('refine').checked})});job=queued.job_id;$('cancel').disabled=false;await refresh()}catch(e){setStatus(e.message);setBusy(false)}};
+$('start').onclick=async()=>{try{if(!$('file').files[0]){$('file').focus();throw Error('Choose a video file to analyze.')}if(!$('query').value.trim()){$('query').focus();throw Error('Enter an action query, such as “Find people walking”. The example text is only a placeholder.')}if(!$('maxCalls').checkValidity()){$('maxCalls').reportValidity();return}setBusy(true);clearResults();job=null;$('runId').textContent='';lastState=null;runStarted=Date.now();showProgress('upload','Checking analysis availability…');setStatus('Checking provider availability...');await api('/connection');showProgress('upload','Uploading video and validating metadata on the server…');setStatus('Uploading video...');const form=new FormData();form.append('file',$('file').files[0]);const asset=await api('/videos',{method:'POST',body:form});showProgress('queued','Video validated. Submitting analysis job…');const queued=await api('/localize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_id:asset.video_id,prompt:$('query').value.trim(),enable_spatial:$('spatial').checked,enable_refinement:$('refine').checked,max_model_calls:Number($('maxCalls').value)})});job=queued.job_id;$('runId').textContent='Run ID: '+job;$('cancel').disabled=false;await refresh()}catch(e){lastState=null;setStatus(e.message);if(!$('pipeline').hidden){$('progressTitle').textContent='Analysis interrupted';$('currentActivity').textContent=e.message;$('workProgress').hidden=true}setBusy(false)}};
 let refreshing=false;
-async function refresh(){if(refreshing)return;refreshing=true;clearTimeout(poll);try{const state=await api('/jobs/'+job);setStatus(state.status+' / '+state.stage+' / '+state.calls+' model calls');if(['succeeded','partial','failed','cancelled'].includes(state.status)){if(state.error_code)setStatus($('status').textContent+' / '+state.error_code);if(['succeeded','partial'].includes(state.status)){report=await api('/results/'+job);render()}setBusy(false)}else{if(state.status==='queued')setStatus('Queued: waiting for the analysis worker. If this persists, use Test connection in Settings.');poll=setTimeout(refresh,1000)}}catch(e){setStatus(e.message);setBusy(false)}finally{refreshing=false}}
+async function refresh(){if(refreshing)return;refreshing=true;clearTimeout(poll);try{const state=await api('/jobs/'+job);lastState=state;showProgress(state.stage,null,state);renderDecision('retryDecision',state);setStatus(state.status+' / '+state.stage+' / '+state.calls+' model calls');if(state.retry_decision)setStatus('Stopped for your decision / '+state.calls+' model calls');if(['succeeded','partial','failed','cancelled'].includes(state.status)){if(state.error_code){$('currentActivity').textContent=state.error_message||('Analysis stopped: '+state.error_code);if(state.retry_at)$('currentActivity').textContent+=' Try again after '+new Date(state.retry_at*1000).toLocaleString()+'.';$('details').textContent=JSON.stringify(state,null,2);}if(state.error_code)setStatus($('status').textContent+' / '+state.error_code);if(['succeeded','partial'].includes(state.status)){report=await api('/results/'+job);render()}setBusy(false)}else{if(state.status==='queued')setStatus('Queued: waiting for the analysis worker. If this persists, use Test connection in Settings.');poll=setTimeout(refresh,1000)}}catch(e){lastState=null;setStatus(e.message);if(!$('pipeline').hidden){$('progressTitle').textContent='Analysis interrupted';$('currentActivity').textContent=e.message;$('workProgress').hidden=true}setBusy(false)}finally{refreshing=false}}
 $('cancel').onclick=async()=>{try{await api('/jobs/'+job+'/cancel',{method:'POST'});await refresh()}catch(e){setStatus(e.message)}};
+function renderDecision(target,state){
+  const panel=$(target),failure=state.retry_decision;panel.replaceChildren();panel.hidden=!failure;
+  if(!failure)return;
+  const title=document.createElement('h3');title.textContent='More calls require your approval';
+  const reason=document.createElement('p');reason.textContent=`${failure.stage}: ${failure.message} (${failure.error_code})`;
+  const usage=document.createElement('p');usage.className='hint';usage.textContent=`Run ${state.id} used ${state.calls} new model call(s). Completed responses are saved. No retry is running.`;
+  panel.append(title,reason,usage);
+  if(!failure.can_retry){const help=document.createElement('p');help.textContent='Resolve this configuration, quota, or access issue before starting another run.';panel.append(help);return}
+  const note=document.createElement('p');note.className='hint';note.textContent='Retry the failed step once? Only successful saved responses are reused. The failed request may be charged again. A budget of 1 permits one new call; further unfinished steps will ask again.';
+  const label=document.createElement('label');label.textContent='Maximum new calls you approve: ';
+  const budget=document.createElement('input');budget.type='number';budget.min='1';budget.max='100';budget.value='1';budget.style.width='70px';label.append(budget);
+  const actions=document.createElement('div');actions.className='actions-row';
+  const retry=document.createElement('button');retry.className='primary';retry.textContent='Approve retry';
+  const keep=document.createElement('button');keep.className='secondary';keep.textContent='Keep results — no more calls';
+  const feedback=document.createElement('p');feedback.className='hint';feedback.setAttribute('role','status');
+  if(failure.retry_at&&failure.retry_at*1000>Date.now())feedback.textContent='Provider retry available after '+new Date(failure.retry_at*1000).toLocaleString()+'.';
+  keep.onclick=()=>{panel.hidden=true};
+  retry.onclick=async()=>{
+    if(!budget.checkValidity()){budget.reportValidity();return}
+    if($('start').disabled){feedback.textContent='Wait for the current run to finish first.';return}
+    retry.disabled=true;keep.disabled=true;
+    try{
+      const queued=await api('/jobs/'+encodeURIComponent(state.id)+'/retry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approved:true,max_model_calls:Number(budget.value)})});
+      clearTimeout(poll);clearResults();job=queued.job_id;lastState=null;$('runId').textContent='Run ID: '+job;
+      if(state.request){$('query').value=state.request.prompt;$('spatial').checked=state.request.enable_spatial;$('refine').checked=state.request.enable_refinement}
+      $('maxCalls').value=budget.value;setBusy(true);$('cancel').disabled=false;
+      document.querySelector('[data-view="analyze"]').click();
+      if(state.video_id){
+        $('video').removeAttribute('src');$('video').load();
+        try{
+          const headers={};if($('token').value.trim())headers.Authorization='Bearer '+$('token').value.trim();
+          const response=await fetch(apiURL('/videos/'+encodeURIComponent(state.video_id)+'/content'),{headers});
+          if(!response.ok)throw Error('Preview unavailable');
+          if(mediaURL)URL.revokeObjectURL(mediaURL);mediaURL=URL.createObjectURL(await response.blob());$('video').src=mediaURL;
+        }catch(e){$('previewStatus').textContent='Run resumed; video preview unavailable.'}
+      }
+      await refresh();
+    }catch(e){feedback.textContent=e.message;retry.disabled=false;keep.disabled=false}
+  };
+  actions.append(retry,keep);panel.append(note,label,actions,feedback);
+}
+let historyOffset=0,historySelection=0,historyURL=null;
+const dateText=t=>t?new Date(t*1000).toLocaleString():'—';
+async function loadHistory(append=false){
+  $('historyStatus').textContent='Loading runs…';$('moreHistory').disabled=true;
+  if(!append){historyOffset=0;$('historyList').replaceChildren()}
+  try{
+    const data=await api('/jobs?offset='+historyOffset);
+    for(const run of data.runs){
+      const card=document.createElement('button');card.className='secondary';card.style.cssText='display:block;text-align:left;padding:14px;overflow-wrap:anywhere';
+      const id=document.createElement('strong');id.textContent='Run '+run.id;
+      const meta=document.createElement('div');meta.className='hint';meta.textContent=`${run.status} · ${dateText(run.created_at)} · ${run.calls} model calls${run.error_code?' · '+run.error_code:''}`;
+      const query=document.createElement('div');query.textContent=run.request.prompt;
+      card.append(id,meta,query);card.onclick=()=>selectRun(run.id);$('historyList').append(card);
+    }
+    historyOffset=data.next_offset;$('moreHistory').hidden=historyOffset===null;
+    $('historyStatus').textContent=$('historyList').children.length?'Select a run to inspect its details.':'No saved runs yet.';
+  }catch(e){$('historyStatus').textContent=e.message}finally{$('moreHistory').disabled=false}
+}
+async function selectRun(id){
+  const selection=++historySelection;
+  $('historyDetail').hidden=false;$('historyRetry').hidden=true;$('historyData').textContent='Loading…';$('historyResult').textContent='';$('reviewRun').hidden=true;$('historyDownload').hidden=true;
+  try{
+    const details=await api('/jobs/'+encodeURIComponent(id)+'/details');
+    const result=details.has_result?await api('/results/'+encodeURIComponent(id)):null;
+    if(selection!==historySelection)return;
+    renderDecision('historyRetry',details);
+    const display={...details,created_at:dateText(details.created_at),started_at:dateText(details.started_at),completed_at:dateText(details.completed_at)};
+    $('historyData').textContent=JSON.stringify(display,null,2);
+    $('historyResult').textContent=result?JSON.stringify(result,null,2):details.error_message||'No result available for this run.';
+    if(historyURL)URL.revokeObjectURL(historyURL);
+    historyURL=URL.createObjectURL(new Blob([JSON.stringify({run:details,result},null,2)],{type:'application/json'}));
+    $('historyDownload').href=historyURL;$('historyDownload').download='shar-run-'+id+'.json';$('historyDownload').hidden=false;
+    $('reviewRun').hidden=!result;
+    $('reviewRun').onclick=async()=>{
+      if($('start').disabled){$('historyStatus').textContent='Wait for the active analysis to finish before opening another run.';return}
+      try{
+        const headers={};if($('token').value.trim())headers.Authorization='Bearer '+$('token').value.trim();
+        const response=await fetch(apiURL('/videos/'+encodeURIComponent(details.video_id)+'/content'),{headers});
+        if(!response.ok)throw Error('Video preview unavailable');
+        const blob=await response.blob();clearResults();clearTimeout(poll);lastState=details;job=id;
+        if(mediaURL)URL.revokeObjectURL(mediaURL);mediaURL=URL.createObjectURL(blob);$('video').src=mediaURL;
+        $('query').value=details.request.prompt;$('spatial').checked=details.request.enable_spatial;$('refine').checked=details.request.enable_refinement;
+        $('runId').textContent='Run ID: '+id;report=result;render();showProgress(details.stage,null,details);renderDecision('retryDecision',details);setStatus(details.status);
+        document.querySelector('[data-view="analyze"]').click();
+      }catch(e){$('historyStatus').textContent=e.message}
+    };
+  }catch(e){if(selection===historySelection)$('historyData').textContent=e.message}
+}
+$('refreshHistory').onclick=()=>loadHistory();$('moreHistory').onclick=()=>loadHistory(true);
 const palette=['#78e0a0','#7ab8ff','#ffc875','#e59aff'];
 const stamp=t=>{const minutes=Math.floor(t/60);return `${String(minutes).padStart(2,'0')}:${(t%60).toFixed(2).padStart(5,'0')}`};
 const score=value=>value==null?'not reported':`${(value*100).toFixed(1)}%`;
@@ -124,7 +270,7 @@ function render(){
     const bar=document.createElement('button');bar.title=`${p.label}: ${info.textContent}`;bar.setAttribute('aria-label',bar.title);bar.style.background=color;bar.style.top=(4+i*32)+'px';bar.style.left=p.start_sec/report.video.duration_sec*100+'%';bar.style.width=(p.end_sec-p.start_sec)/report.video.duration_sec*100+'%';bar.onclick=button.onclick;$('timeline').append(bar);
   });
   $('details').textContent=JSON.stringify({provider:report.provenance?.provider,model:report.provenance?.model,warnings:report.warnings,coverage:report.coverage,recognition:report.recognition,boundaries:report.predictions.map(p=>({label:p.label,start:p.start_boundary,end:p.end_boundary}))},null,2);
-  if(resultURL)URL.revokeObjectURL(resultURL);resultURL=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));$('download').href=resultURL;$('download').download='shar-result.json';$('download').hidden=false;
+  if(resultURL)URL.revokeObjectURL(resultURL);resultURL=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));$('download').href=resultURL;$('download').download='shar-result-'+job+'.json';$('download').hidden=false;
 }
 function draw(){
   const c=$('overlay'),v=$('video');c.width=v.clientWidth;c.height=v.clientHeight;const ctx=c.getContext('2d');

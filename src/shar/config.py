@@ -38,12 +38,17 @@ class Settings(BaseModel):
     enable_refinement: bool = True
     enable_boundary_search: bool = True
     call_timeout_sec: float = Field(default=60, gt=0)
+    provider_max_attempts: int = Field(default=3, ge=1, le=10)
+    require_retry_approval: bool = True
+    retry_base_sec: float = Field(default=2, gt=0)
+    retry_max_sec: float = Field(default=30, gt=0)
     upload_timeout_sec: float = Field(default=120, gt=0)
     job_timeout_sec: float = Field(default=1800, gt=0)
     max_upload_bytes: int = Field(default=1073741824, gt=0)
     max_duration_sec: float = Field(default=3600, gt=0)
     max_pixels: int = Field(default=33_177_600, gt=0)
     output_tokens: int = Field(default=4096, gt=0)
+    thinking_level: Literal["minimal", "low", "medium", "high"] | None = None
     estimated_tokens_per_frame: int = Field(default=512, gt=0)
     rpm: int | None = Field(default=None, gt=0)
     tpm: int | None = Field(default=None, gt=0)
@@ -68,6 +73,8 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def consistent(self):
+        if self.retry_max_sec < self.retry_base_sec:
+            raise ValueError("retry_max_sec must be at least retry_base_sec")
         if self.overlap_sec >= self.window_sec:
             raise ValueError("overlap_sec must be smaller than window_sec")
         if not self.enable_temporal and (self.enable_spatial or self.enable_refinement):
@@ -98,7 +105,25 @@ class Settings(BaseModel):
 
 def load_settings(path: Path | None = None, overrides: dict | None = None) -> Settings:
     values = yaml.safe_load(path.read_text()) or {} if path else {}
-    for key in ("provider", "model", "storage_root", "host", "auth_mode", "rpm", "tpm", "rpd"):
+    for key in (
+        "provider",
+        "model",
+        "storage_root",
+        "host",
+        "auth_mode",
+        "rpm",
+        "tpm",
+        "rpd",
+        "max_calls",
+        "max_job_attempts",
+        "output_tokens",
+        "thinking_level",
+        "call_timeout_sec",
+        "provider_max_attempts",
+        "require_retry_approval",
+        "retry_base_sec",
+        "retry_max_sec",
+    ):
         if os.environ.get(f"SHAR_{key.upper()}"):
             values[key] = os.environ[f"SHAR_{key.upper()}"]
     if overrides:

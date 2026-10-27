@@ -1,3 +1,6 @@
+import time
+
+
 class SharError(Exception):
     def __init__(self, code: str, message: str, retryable: bool = False, status: int = 422):
         super().__init__(message)
@@ -11,6 +14,7 @@ class SharError(Exception):
                 "message": self.message,
                 "retryable": self.retryable,
                 "request_id": request_id,
+                **({"retry_at": time.time() + self.retry_after} if self.retry_after else {}),
             }
         }
 

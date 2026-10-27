@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 import random
 import time
 
@@ -7,7 +9,7 @@ from shar.errors import Cancelled, SharError
 from shar.inference import prompts
 from shar.inference.multimodal.base import ModelRequest, ModelResponse
 from shar.inference.multimodal.cache import InferenceCache
-from shar.inference.multimodal.limits import Budget, SharedLimiter
+from shar.inference.multimodal.limits import Budget, ProviderCooldown, SharedLimiter, provider_scope
 from shar.inference.multimodal.mock import MockModel
 from shar.inference.refinement import refine
 from shar.inference.spatial.localizer import MLLMLocalizer
@@ -15,6 +17,7 @@ from shar.inference.temporal.merge import nms, stitch
 from shar.inference.temporal.proposals import candidates
 from shar.inference.validation import validate_response
 from shar.schemas import ActionPrediction, ActionReport, BoundaryEstimate, Coverage, Usage
+from shar.storage.artifacts import LocalArtifacts
 from shar.telemetry import event
 from shar.video.sampling import sample, windows
 
@@ -32,7 +35,14 @@ def make_model(settings):
 
 class Pipeline:
     def __init__(
-        self, settings: Settings, model=None, cancelled=None, reserve=None, checkpoint=None
+        self,
+        settings: Settings,
+        model=None,
+        cancelled=None,
+        reserve=None,
+        checkpoint=None,
+        resume_root_id=None,
+        resume_required=False,
     ):
         self.settings = settings
         self.model = model or make_model(settings)
@@ -42,7 +52,7 @@ class Pipeline:
         self.limiter = (
             SharedLimiter(
                 settings.storage_root,
-                settings.model,
+                provider_scope(settings),
                 settings.rpm or 1,
                 settings.tpm or 1,
                 settings.rpd or 1,
@@ -50,6 +60,7 @@ class Pipeline:
             if settings.provider == "gemini"
             else None
         )
+        self.cooldown = ProviderCooldown(settings) if settings.provider == "gemini" else None
         self.usage = Usage()
         self.scope, self.video_hash = "", ""
         self.budget = Budget(
@@ -59,6 +70,130 @@ class Pipeline:
         self.resolved_models: set[str] = set()
         self.manifests: list[dict] = []
         self.unknown_usage: set[str] = set()
+        self.provider_blocked: SharError | None = None
+        self.failure: dict | None = None
+        self.resume_root_id = resume_root_id
+        self.resume_required = resume_required
+        self.response_index = None
+        self.saved = LocalArtifacts(settings.storage_root)
+        self.last_call_key = None
+
+    def response_index_key(self):
+        return f"run-responses/{self.resume_root_id}/index.json"
+
+    def saved_response(self, key):
+        if not self.resume_root_id:
+            return None
+        try:
+            if self.response_index is None:
+                try:
+                    self.response_index = json.loads(self.saved.get(self.response_index_key()))
+                except FileNotFoundError:
+                    if self.resume_required:
+                        raise
+                    self.response_index = {}
+                    self.saved.put(self.response_index_key(), b"{}")
+            if not isinstance(self.response_index, dict):
+                raise ValueError("invalid response index")
+            if key not in self.response_index:
+                return None
+            raw = self.saved.get(f"run-responses/{self.resume_root_id}/{key}.json")
+            if hashlib.sha256(raw).hexdigest() != self.response_index[key]:
+                raise ValueError("saved response checksum mismatch")
+            return json.loads(raw)
+        except (FileNotFoundError, ValueError, TypeError) as exc:
+            raise SharError(
+                "SAVED_RESPONSE_UNAVAILABLE",
+                "A completed response is missing or damaged. No new request was sent to regenerate it. Restore the saved run data before continuing.",
+            ) from exc
+
+    def save_response(self, key, value):
+        if self.resume_root_id:
+            checksum = self.saved.put(
+                f"run-responses/{self.resume_root_id}/{key}.json", json.dumps(value).encode()
+            )
+            self.response_index[key] = checksum
+            self.saved.put(self.response_index_key(), json.dumps(self.response_index).encode())
+
+    def require_decision(self, request, error):
+        if self.failure is None:
+            self.failure = {
+                "stage": {
+                    "temporal": "analysis",
+                    "recognize": "analysis",
+                    "refine": "refinement",
+                    "spatial": "localization",
+                }.get(request.task, request.task),
+                "task": request.task,
+                "error_code": error.code,
+                "message": error.message,
+                "retry_at": time.time() + error.retry_after if error.retry_after else None,
+                "can_retry": error.code
+                in {
+                    "PROVIDER_TRANSIENT",
+                    "PROVIDER_TIMEOUT",
+                    "PROVIDER_RATE_LIMIT",
+                    "INVALID_MODEL_OUTPUT",
+                    "INVALID_REFINEMENT",
+                    "CALL_BUDGET",
+                    "CALL_BUDGET_OR_LEASE",
+                    "DEADLINE",
+                    "DAILY_QUOTA",
+                },
+            }
+            self.progress(
+                "decision",
+                "Stopped. No more model calls will be sent without your approval.",
+                failure=self.failure,
+            )
+        error.retryable = False
+        self.provider_blocked = error
+
+    async def infer(self, request):
+        try:
+            return await self._infer(request)
+        except SharError as error:
+            if self.settings.require_retry_approval and not isinstance(error, Cancelled):
+                self.require_decision(request, error)
+            raise
+
+    def refinement_decision(self, reason):
+        if (
+            not self.settings.require_retry_approval
+            or self.failure
+            or reason
+            in {
+                "max_iterations",
+                "converged",
+                "repeated_state",
+                "no_new_evidence",
+            }
+        ):
+            return
+        if reason == "invalid_refinement":
+            # Structurally valid output can still lack evidence for its boundary move.
+            # Do not replay that rejected proposal on an approved retry.
+            if self.last_call_key:
+                self.cache.store.delete(self.last_call_key + ".json")
+                if self.resume_root_id:
+                    self.saved.delete(
+                        f"run-responses/{self.resume_root_id}/{self.last_call_key}.json"
+                    )
+                    self.response_index.pop(self.last_call_key, None)
+                    self.saved.put(
+                        self.response_index_key(), json.dumps(self.response_index).encode()
+                    )
+            message = "The model's proposed boundary change was not supported by the supplied frames. The previous interval was kept."
+        else:
+            message = f"Boundary refinement stopped: {reason.replace('_', ' ')}. The previous interval was kept."
+        self.require_decision(
+            ModelRequest("refine", "", [], 0.0, 1.0),
+            SharError(reason.upper(), message),
+        )
+
+    def progress(self, stage, message, **details):
+        if self.checkpoint:
+            self.checkpoint({"stage": stage, "message": message, **details})
 
     def check(self):
         if self.cancelled():
@@ -66,11 +201,74 @@ class Pipeline:
         if time.monotonic() >= self.budget.deadline:
             raise SharError("DEADLINE", "Job deadline exceeded")
 
+    async def wait_to_retry(self, task, error, delay):
+        if delay >= self.budget.deadline - time.monotonic():
+            blocked = SharError(
+                error.code,
+                error.message + " The retry delay exceeds this job's remaining time.",
+                False,
+                error.status,
+            )
+            blocked.retry_after = error.retry_after
+            self.provider_blocked = blocked
+            raise blocked from error
+        self.progress(
+            "model",
+            f"Waiting {delay:.1f}s before {task}: {error.message}",
+            error_code=error.code,
+            retry_after_sec=delay,
+            retry_at=time.time() + delay,
+        )
+        retry_at = time.monotonic() + delay
+        while time.monotonic() < retry_at:
+            self.check()
+            await asyncio.sleep(min(0.1, max(0.0, retry_at - time.monotonic())))
+        self.check()
+
+    async def reserve_capacity(self, request, estimated_tokens):
+        # Waiting for capacity is not a provider attempt and consumes no call budget.
+        while True:
+            self.check()
+            self.budget.check()
+            try:
+                if self.cooldown:
+                    self.cooldown.check()
+                return self.limiter.reserve(estimated_tokens) if self.limiter else None
+            except SharError as error:
+                if not error.retryable or error.retry_after <= 0:
+                    raise
+                await self.wait_to_retry(request.task, error, error.retry_after)
+
+    def exhausted_error(self, error, attempts):
+        reason = (
+            f"The run's model-call limit ({self.budget.max_calls}) is exhausted."
+            if self.budget.calls >= self.budget.max_calls
+            else "Automatic retries for this request are exhausted."
+        )
+        exhausted = SharError(
+            error.code,
+            f"{error.message} {attempts} provider attempt(s) failed. {reason}",
+            False,
+            error.status,
+        )
+        exhausted.retry_after = error.retry_after
+        return exhausted
+
     async def _infer_guarded(self, request):
         task = asyncio.create_task(self.model.infer(request))
+        started = last_update = time.monotonic()
         try:
             while not task.done():
                 self.check()
+                now = time.monotonic()
+                if now - last_update >= 5:
+                    self.progress(
+                        "model",
+                        f"Waiting for {request.task} model response "
+                        f"({now - started:.0f}s elapsed; "
+                        f"{self.settings.call_timeout_sec:g}s call timeout)",
+                    )
+                    last_update = now
                 await asyncio.wait({task}, timeout=0.1)
             self.check()
             return await task
@@ -79,7 +277,7 @@ class Pipeline:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
-    async def infer(self, request):
+    async def _infer(self, request):
         self.check()
         request.prompt = prompts.build(request)
         if (
@@ -95,15 +293,26 @@ class Pipeline:
             }
         )
         key = self.cache.key(self.scope, self.video_hash, request, self.settings)
-        cached = self.cache.get(key)
+        self.last_call_key = key
+        cached = self.saved_response(key)
+        cached = cached or self.cache.get(key)
         if cached is not None:
+            self.progress("model", f"Using cached {request.task} response")
             self.usage.cache_hits += 1
             if self.resolved_models and cached["model"] not in self.resolved_models:
                 raise SharError("MODEL_DRIFT", "Resolved model version changed within the job")
             self.resolved_models.add(cached["model"])
+            self.save_response(key, cached)
             return validate_response(ModelResponse(cached["payload"], cached["model"]), request)
+        if self.provider_blocked:
+            raise self.provider_blocked
         corrected = False
-        for attempt in range(3):
+        self.budget.check()
+        attempts = min(
+            1 if self.settings.require_retry_approval else self.settings.provider_max_attempts,
+            self.budget.max_calls - self.budget.calls,
+        )
+        for attempt in range(attempts):
             self.check()
             self.budget.check()
             cost = 0.0
@@ -117,12 +326,20 @@ class Pipeline:
                 )
                 if self.estimated_spend + cost > self.settings.max_cost:
                     raise SharError("SPEND_BUDGET", "Estimated spend budget exhausted")
-                self.estimated_spend += cost
-            self.budget.reserve(cost)
-            self.usage.model_calls += 1
-            reservation = self.limiter.reserve(estimated_tokens) if self.limiter else None
             started = time.monotonic()
+            reservation = await self.reserve_capacity(request, estimated_tokens)
             try:
+                self.budget.reserve(cost)
+                self.estimated_spend += cost
+                self.usage.model_calls += 1
+                self.progress(
+                    "model",
+                    (
+                        f"Sending {request.task} request · new call {self.usage.model_calls}/{self.settings.max_calls}"
+                        if self.settings.require_retry_approval
+                        else f"Waiting for {request.task} model response (attempt {attempt + 1}/{attempts})"
+                    ),
+                )
                 timeout = min(
                     self.settings.call_timeout_sec, self.budget.deadline - time.monotonic()
                 )
@@ -145,8 +362,28 @@ class Pipeline:
                         if actual is not None
                         else None,
                     )
-                payload = validate_response(response, request)
+                try:
+                    payload = validate_response(response, request)
+                except SharError as exc:
+                    # Retain rejected output locally so it can be investigated without
+                    # spending another provider call to reproduce it.
+                    self.cache.store.put(
+                        key + ".invalid.json",
+                        json.dumps(
+                            {
+                                "payload": response.payload,
+                                "model": response.model,
+                                "finish_reason": response.finish_reason,
+                                "error_code": exc.code,
+                            },
+                            default=str,
+                        ).encode(),
+                    )
+                    raise
                 self.cache.put(key, payload.model_dump(mode="json"), response.model)
+                self.save_response(
+                    key, {"payload": payload.model_dump(mode="json"), "model": response.model}
+                )
                 event(
                     "inference",
                     task=request.task,
@@ -157,23 +394,35 @@ class Pipeline:
             except TimeoutError as exc:
                 self.unknown_usage.update({"input_tokens", "output_tokens"})
                 error = SharError("PROVIDER_TIMEOUT", "Model call timed out", True, 503)
-                if attempt == 2:
+                if self.settings.require_retry_approval:
                     raise error from exc
+                if attempt == attempts - 1:
+                    raise self.exhausted_error(error, attempt + 1) from exc
             except SharError as exc:
                 error = exc
+                if self.cooldown and exc.code.startswith("PROVIDER_"):
+                    self.cooldown.record(exc)
+                if exc.code in {"PROVIDER_DAILY_QUOTA", "PROVIDER_QUOTA_EXHAUSTED"}:
+                    self.provider_blocked = exc
                 if exc.code != "INVALID_MODEL_OUTPUT":
                     self.unknown_usage.update({"input_tokens", "output_tokens"})
-                if exc.code == "INVALID_MODEL_OUTPUT" and not corrected:
+                if self.settings.require_retry_approval:
+                    raise
+                if exc.code == "INVALID_MODEL_OUTPUT" and not corrected and attempt < attempts - 1:
                     corrected = True
                     request.prompt += "\nCORRECTION: Previous output failed validation. Follow the schema and exact evidence manifest."
-                elif not exc.retryable or attempt == 2:
+                elif not exc.retryable:
                     raise
-            await asyncio.sleep(
-                min(
-                    max(getattr(error, "retry_after", 0), 0.2 * 2**attempt + random.random() * 0.1),
-                    max(0.0, self.budget.deadline - time.monotonic()),
-                )
+                elif attempt == attempts - 1:
+                    # This call already exhausted its retries. Retrying the entire
+                    # job repeats successful windows and multiplies provider calls.
+                    raise self.exhausted_error(exc, attempt + 1) from exc
+            delay = max(
+                error.retry_after,
+                min(self.settings.retry_max_sec, self.settings.retry_base_sec * 2**attempt)
+                * random.uniform(1, 1.25),
             )
+            await self.wait_to_retry(request.task, error, delay)
         raise SharError("INVALID_MODEL_OUTPUT", "Model output remained invalid after retries")
 
     async def run(
@@ -189,12 +438,19 @@ class Pipeline:
         if not 0 <= start < end <= asset.metadata.duration_sec:
             raise SharError("INVALID_INTERVAL", "Requested interval exceeds video")
         try:
-            for local_start, local_end in windows(
-                end - start, self.settings.window_sec, self.settings.overlap_sec
-            ):
+            segments = list(
+                windows(end - start, self.settings.window_sec, self.settings.overlap_sec)
+            )
+            for index, (local_start, local_end) in enumerate(segments):
                 self.check()
                 a, b = start + local_start, start + local_end
                 try:
+                    self.progress(
+                        "analysis",
+                        f"Sampling window {index + 1}/{len(segments)} ({a:.1f}–{b:.1f}s)",
+                        completed=index,
+                        total=len(segments),
+                    )
                     frames = await asyncio.to_thread(
                         sample, path, asset.metadata, a, b, self.settings.coarse_fps, self.settings
                     )
@@ -212,6 +468,9 @@ class Pipeline:
                             )
                         )
                         coverage.analyzed_intervals.append((a, b))
+                        self.progress(
+                            "analysis", "Window sampled", completed=index + 1, total=len(segments)
+                        )
                         continue
                     request = ModelRequest(
                         task="temporal" if self.settings.enable_temporal else "recognize",
@@ -265,18 +524,37 @@ class Pipeline:
                     )
                     recognition.extend(payload.recognition)
                     coverage.analyzed_intervals.append((a, b))
-                    if self.checkpoint:
-                        self.checkpoint({"window": [a, b], "cache_keyed": True})
+                    self.progress(
+                        "analysis",
+                        f"Window {index + 1}/{len(segments)} analyzed",
+                        completed=index + 1,
+                        total=len(segments),
+                    )
                 except SharError as exc:
                     if isinstance(exc, Cancelled):
                         raise
                     last_error = exc
                     coverage.failed_intervals.append((a, b))
                     warnings.append(exc.code)
+                    self.progress(
+                        "analysis",
+                        f"Window {index + 1} failed: {exc.code}",
+                        completed=index + 1,
+                        total=len(segments),
+                    )
+                    if self.settings.require_retry_approval:
+                        coverage.failed_intervals.extend(
+                            (start + lo, start + hi) for lo, hi in segments[index + 1 :]
+                        )
+                        break
                     if exc.code in {
                         "PROVIDER_CONFIG",
                         "MODEL_REFUSAL",
                         "PROVIDER_ERROR",
+                        "PROVIDER_AUTH",
+                        "PROVIDER_MODEL_NOT_FOUND",
+                        "PROVIDER_DAILY_QUOTA",
+                        "PROVIDER_QUOTA_EXHAUSTED",
                         "NATIVE_VIDEO_CONFIG",
                         "MODEL_DRIFT",
                     }:
@@ -285,6 +563,7 @@ class Pipeline:
                 if last_error is not None:
                     raise last_error
                 raise SharError("NO_COVERAGE", "No window was successfully analyzed")
+            self.progress("merging", "Merging overlapping action proposals")
             if self.settings.enable_stitching:
                 predictions = stitch(predictions)
             predictions = nms(predictions, self.settings.nms_tiou)
@@ -293,7 +572,16 @@ class Pipeline:
                 predictions = predictions[: self.settings.max_candidates]
             localizer = MLLMLocalizer(self.infer, query) if self.settings.enable_spatial else None
             refined = []
-            for candidate in predictions:
+            for candidate_index, candidate in enumerate(predictions):
+                if self.settings.enable_refinement or (
+                    self.settings.enable_boundary_search and not track_only
+                ):
+                    self.progress(
+                        "refinement",
+                        f"Processing action {candidate_index + 1}/{len(predictions)}",
+                        completed=candidate_index,
+                        total=len(predictions),
+                    )
                 self.check()
                 actor_tracks = [t for t in tracks if t.actor_id in candidate.actor_ids]
 
@@ -326,7 +614,9 @@ class Pipeline:
                     self.settings.enable_boundary_search
                     and self.settings.boundary_calls
                     and not track_only
+                    and not self.failure
                 ):
+                    self.progress("refinement", "Searching action boundaries")
                     search_settings = self.settings.model_copy(
                         update={"max_rounds": self.settings.boundary_calls}
                     )
@@ -334,6 +624,7 @@ class Pipeline:
                         candidate, [], dense, self.infer, None, search_settings, self.budget
                     )
                     boundary_rounds = len(history)
+                    self.refinement_decision(reason)
                     revisions.append(
                         {
                             "prediction_id": candidate.id,
@@ -349,7 +640,8 @@ class Pipeline:
                         "no_new_evidence",
                     }:
                         warnings.append("BOUNDARY_" + reason.upper())
-                if self.settings.enable_refinement:
+                if self.settings.enable_refinement and not self.failure:
+                    self.progress("refinement", "Refining temporal boundaries")
                     candidate, actor_tracks, history, reason = await refine(
                         candidate,
                         actor_tracks,
@@ -368,6 +660,7 @@ class Pipeline:
                     revisions.append(
                         {"prediction_id": candidate.id, "stop_reason": reason, "history": history}
                     )
+                    self.refinement_decision(reason)
                     if reason not in {
                         "max_iterations",
                         "converged",
@@ -375,7 +668,8 @@ class Pipeline:
                         "no_new_evidence",
                     }:
                         warnings.append("REFINEMENT_" + reason.upper())
-                if localizer:
+                if localizer and not self.failure:
+                    self.progress("localization", "Sampling action frames and localizing actors")
                     try:
                         # Sample the whole final interval, not just boundary neighborhoods.
                         spatial_frames = await asyncio.to_thread(
@@ -402,6 +696,7 @@ class Pipeline:
                     warnings.append("SPATIAL_UNLOCALIZED")
                 refined.append(candidate)
                 tracks.extend(actor_tracks)
+            self.progress("finalizing", "Validating and assembling results")
             for field in self.unknown_usage:
                 setattr(self.usage, field, None)
             if (
@@ -448,6 +743,7 @@ class Pipeline:
                     "sampling_manifests": self.manifests,
                     "mock_semantics": self.settings.provider == "mock",
                     "region_source": "user_supplied" if track_only else "model",
+                    "failure": self.failure,
                 },
                 **kwargs,
             )

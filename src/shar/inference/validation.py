@@ -61,6 +61,14 @@ def validate_response(response, request) -> ModelPayload:
             raise ValueError("recognition must not fabricate temporal intervals")
         return payload
     except (ValidationError, ValueError, TypeError) as exc:
+        if isinstance(exc, ValidationError):
+            # Error types/locations explain the contract without echoing model text.
+            reason = "; ".join(
+                f"{'.'.join(map(str, item['loc']))}: {item['type']}"
+                for item in exc.errors(include_input=False, include_url=False)[:3]
+            )
+        else:
+            reason = str(exc) if isinstance(exc, ValueError) else "invalid response value type"
         raise SharError(
-            "INVALID_MODEL_OUTPUT", "Model response failed schema or evidence validation"
+            "INVALID_MODEL_OUTPUT", "Model response failed validation: " + reason
         ) from exc

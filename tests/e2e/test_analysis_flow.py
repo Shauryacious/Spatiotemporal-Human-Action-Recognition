@@ -73,3 +73,30 @@ async def test_track_uses_supplied_region(settings, asset):
     assert seen == ["spatial"]
     assert result.json()["predictions"][0]["start_sec"] == 1.0
     assert result.json()["tracks"]
+
+
+async def test_disabling_refinement_disables_both_boundary_passes(settings, asset):
+    from shar.inference.multimodal.mock import MockModel
+
+    app = create_app(settings)
+    app.state.repo.add_video(asset)
+    client = TestClient(app)
+    response = client.post(
+        "/localize",
+        json={
+            "video_id": asset.id,
+            "prompt": "visible actions",
+            "enable_refinement": False,
+            "enable_spatial": False,
+        },
+    )
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+    model = MockModel(demo=True)
+    await Worker(settings, model_factory=lambda _: model).once()
+    result = client.get("/results/" + job_id)
+    assert result.status_code == 200
+    assert result.json()["predictions"]
+    assert model.calls == result.json()["usage"]["model_calls"] == 1
+    activity = client.get("/jobs/" + job_id).json()["activity"]
+    assert not any(e["details"].get("stage") == "refinement" for e in activity)

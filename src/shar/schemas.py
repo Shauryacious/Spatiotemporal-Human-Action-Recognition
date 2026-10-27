@@ -197,6 +197,10 @@ class ActionReport(Contract):
 
 
 class JobStatus(Contract):
+    retry_decision: dict | None = None
+    activity: list[dict] = Field(default_factory=list)
+    error_message: str | None = None
+    retry_at: float | None = None
     id: str
     status: Literal[
         "queued", "running", "retry_wait", "succeeded", "partial", "failed", "cancelled"

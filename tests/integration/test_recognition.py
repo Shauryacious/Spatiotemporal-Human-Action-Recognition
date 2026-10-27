@@ -29,10 +29,11 @@ async def test_invalid_window_is_partial_not_empty(settings, asset):
     report = await Pipeline(settings, model).run(asset, "actions")
     assert report.status == "partial"
     assert report.coverage.failed_intervals == [(2.0, 4.0)]
-    assert report.usage.model_calls == 3
+    assert report.usage.model_calls == 2
+    assert report.provenance["failure"]["error_code"] == "INVALID_MODEL_OUTPUT"
 
 
-async def test_retry_budget_is_exact(settings, asset):
+async def test_failure_never_uses_remaining_budget_without_approval(settings, asset):
     import pytest
 
     from shar.errors import SharError
@@ -41,7 +42,7 @@ async def test_retry_budget_is_exact(settings, asset):
     settings = settings.model_copy(update={"max_calls": 2})
     with pytest.raises(SharError):
         await Pipeline(settings, model).run(asset, "actions")
-    assert model.calls == 2
+    assert model.calls == 1
 
 
 async def test_complete_temporal_spatial_refinement(settings, asset):
@@ -137,3 +138,130 @@ async def test_spatial_samples_cover_action_interior(settings, asset):
     assert any(1.5 <= timestamp <= 2.5 for timestamp in spatial_times)
     assert all(0 <= timestamp < 4 for timestamp in spatial_times)
     assert report.predictions[0].spatial_status == "unlocalized"
+
+
+async def test_provider_failure_requires_approval_without_retrying_job(settings, asset):
+    import pytest
+
+    from shar.errors import SharError
+
+    model = MockModel(responses=[SharError("PROVIDER_TRANSIENT", "retry", True)] * 3)
+    activity = []
+    with pytest.raises(SharError) as caught:
+        await Pipeline(settings, model, checkpoint=activity.append).run(asset, "actions")
+    assert model.calls == 1
+    assert caught.value.code == "PROVIDER_TRANSIENT"
+    assert not caught.value.retryable
+    assert any(item.get("failure", {}).get("can_retry") for item in activity)
+
+
+async def test_provider_cooldown_longer_than_job_deadline_fails_immediately(settings, asset):
+    import time
+
+    import pytest
+
+    from shar.errors import SharError
+
+    error = SharError("PROVIDER_RATE_LIMIT", "Rate limit reached.", True, 429)
+    error.retry_after = 53008
+    model = MockModel(responses=[error])
+    started = time.monotonic()
+    with pytest.raises(SharError) as caught:
+        await Pipeline(settings, model).run(asset, "actions")
+    assert model.calls == 1
+    assert not caught.value.retryable
+    assert caught.value.retry_after == 53008
+    assert caught.value.message == "Rate limit reached."
+    assert time.monotonic() - started < 3
+
+
+async def test_cancel_during_explicitly_enabled_automatic_retry(settings, asset):
+    settings = settings.model_copy(update={"require_retry_approval": False})
+    import asyncio
+    import time
+
+    import pytest
+
+    from shar.errors import Cancelled, SharError
+
+    error = SharError("PROVIDER_RATE_LIMIT", "Rate limit reached.", True, 429)
+    error.retry_after = 30
+    retrying = asyncio.Event()
+    cancelled = False
+    model = MockModel(responses=[error])
+    pipeline = Pipeline(
+        settings,
+        model,
+        cancelled=lambda: cancelled,
+        checkpoint=lambda details: retrying.set() if details.get("retry_after_sec") else None,
+    )
+    task = asyncio.create_task(pipeline.run(asset, "actions"))
+    await asyncio.wait_for(retrying.wait(), 5)
+    started = time.monotonic()
+    cancelled = True
+    with pytest.raises(Cancelled):
+        await asyncio.wait_for(task, 1)
+    assert time.monotonic() - started < 1
+    assert model.calls == 1
+
+
+async def test_prevented_request_does_not_count_as_model_call(settings, asset):
+    from unittest.mock import Mock
+
+    import pytest
+
+    from shar.errors import SharError
+
+    model = MockModel()
+    durable_reserve = Mock()
+    pipeline = Pipeline(settings, model, reserve=durable_reserve)
+    pipeline.limiter = Mock()
+    pipeline.limiter.reserve.side_effect = SharError("DAILY_QUOTA", "Local quota exhausted")
+    with pytest.raises(SharError):
+        await pipeline.run(asset, "actions")
+    assert model.calls == pipeline.usage.model_calls == pipeline.budget.calls == 0
+    durable_reserve.assert_not_called()
+
+
+async def test_daily_quota_blocks_following_jobs_without_calling_provider(settings, asset):
+    import pytest
+
+    from shar.errors import SharError
+
+    settings = settings.model_copy(
+        update={
+            "provider": "gemini",
+            "model": "test-model",
+            "rpm": 100,
+            "tpm": 100000,
+            "rpd": 100,
+        }
+    )
+    error = SharError("PROVIDER_DAILY_QUOTA", "Daily quota exhausted.", False, 429)
+    error.retry_after = 53000
+    first = MockModel(responses=[error])
+    with pytest.raises(SharError):
+        await Pipeline(settings, first).run(asset, "actions")
+    assert first.calls == 1
+    second = MockModel()
+    pipeline = Pipeline(settings, second)
+    with pytest.raises(SharError) as caught:
+        await pipeline.run(asset, "actions")
+    assert caught.value.code == "PROVIDER_DAILY_QUOTA"
+    assert second.calls == pipeline.usage.model_calls == 0
+
+
+async def test_one_call_budget_does_not_retry_or_hide_provider_error(settings, asset):
+    import pytest
+
+    from shar.errors import SharError
+
+    settings = settings.model_copy(update={"max_calls": 1})
+    model = MockModel(responses=[SharError("PROVIDER_TRANSIENT", "Provider busy", True)])
+    activity = []
+    with pytest.raises(SharError) as caught:
+        await Pipeline(settings, model, checkpoint=activity.append).run(asset, "actions")
+    assert caught.value.code == "PROVIDER_TRANSIENT"
+    assert not caught.value.retryable
+    assert model.calls == 1
+    assert not any("Retrying" in entry["message"] for entry in activity)

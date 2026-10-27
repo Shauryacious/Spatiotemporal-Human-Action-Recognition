@@ -12,6 +12,21 @@ class InferenceCache:
 
     @staticmethod
     def key(scope: str, video_hash: str, request, settings) -> str:
+        config = settings.public()
+        # Workers shrink this deadline as a job waits in the queue. It does not
+        # change the inference request and must not invalidate reusable responses.
+        for name in (
+            "job_timeout_sec",
+            "max_calls",
+            "max_job_attempts",
+            "provider_max_attempts",
+            "require_retry_approval",
+            "retry_base_sec",
+            "retry_max_sec",
+            "call_timeout_sec",
+            "cache_ttl_sec",
+        ):
+            config.pop(name, None)
         value = {
             "scope": scope,
             "video": video_hash,
@@ -21,9 +36,9 @@ class InferenceCache:
             "prompt": request.prompt,
             "context": request.context,
             "query": request.query,
-            "config": settings.public(),
+            "config": config,
             "schema_version": "1.0",
-            "cache_version": 2,
+            "cache_version": 3,
         }
         return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 

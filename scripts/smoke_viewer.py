@@ -69,9 +69,31 @@ async def main():
                     "document.getElementById('status').textContent.startsWith('succeeded')",
                     timeout=30000,
                 )
+                assert await page.locator("#pipeline").is_visible()
+                assert await page.locator("#progressTitle").inner_text() == "Analysis complete"
+                assert await page.locator("#workProgress").evaluate("el => el.value === el.max")
+                assert "Saving analysis results" in await page.locator("#activity").inner_text()
                 assert await page.locator("#download").is_visible()
                 assert "Mock provider" in await page.locator("#resultSummary").inner_text()
-                assert await page.locator("#spatial").is_checked()
+                assert not await page.locator("#spatial").is_checked()
+                assert "Run ID:" in await page.locator("#runId").inner_text()
+                await page.locator('[data-view="history"]').click()
+                await page.locator("#historyList button").first.click()
+                await page.wait_for_function(
+                    "document.getElementById('historyData').textContent.includes('succeeded')"
+                )
+                assert "Find observable actions" in await page.locator("#historyData").inner_text()
+                assert await page.locator("#historyDownload").is_visible()
+                await page.reload()
+                await page.locator('[data-view="history"]').click()
+                await page.locator("#historyList button").first.click()
+                await page.locator("#reviewRun").click()
+                await page.wait_for_function(
+                    "document.getElementById('view-analyze').classList.contains('active')"
+                )
+                assert "Mock provider" in await page.locator("#resultSummary").inner_text()
+                await page.locator("#file").set_input_files(str(ROOT / "data/fixtures/cfr.mp4"))
+                await page.wait_for_function("document.getElementById('video').videoWidth > 0")
                 # Synthetic display fixture: never a claim about the uploaded footage.
                 await page.evaluate("""() => {
                     report = {predictions:[{label:'waving',start_sec:0,end_sec:3,
@@ -122,11 +144,88 @@ async def main():
                 )
                 assert "revision" in await page.locator("#streamEvents").inner_text()
                 assert not errors, errors
+                # Exercise the polling UI with a terminal quota failure. No live provider calls.
+                await page.route(
+                    "**/jobs/quota-fixture",
+                    lambda route: route.fulfill(
+                        json={
+                            "id": "quota-fixture",
+                            "status": "failed",
+                            "stage": "failed",
+                            "calls": 1,
+                            "attempt": 1,
+                            "created_at": 1700000000,
+                            "completed_at": 1700000002,
+                            "error_code": "PROVIDER_DAILY_QUOTA",
+                            "error_message": "Gemini's daily quota is exhausted. Check Google AI Studio.",
+                            "retry_at": 1700053000,
+                            "activity": [
+                                {
+                                    "at": 1700000001,
+                                    "event": "checkpoint",
+                                    "details": {
+                                        "stage": "analysis",
+                                        "message": "Sampling window 1/1",
+                                    },
+                                }
+                            ],
+                        }
+                    ),
+                )
+                await page.locator('[data-view="analyze"]').click()
+                await page.evaluate(
+                    "async () => {clearResults(); job='quota-fixture'; await refresh();}"
+                )
+                assert "daily quota" in await page.locator("#currentActivity").inner_text()
+                assert "Try again after" in await page.locator("#currentActivity").inner_text()
+                assert await page.locator('#checkpoints li[data-state="failed"]').count() == 1
+                assert await page.locator('#checkpoints li[data-state="done"]').count() == 2
+                await page.get_by_text("Analysis diagnostics", exact=True).click()
+                assert "PROVIDER_DAILY_QUOTA" in await page.locator("#details").inner_text()
+                assert await page.locator("#start").is_enabled()
+                assert not errors, errors
+                uploads = []
+                page.on(
+                    "request",
+                    lambda request: (
+                        uploads.append(request.url)
+                        if request.method == "POST" and request.url.endswith("/videos")
+                        else None
+                    ),
+                )
+                await page.route(
+                    "**/connection",
+                    lambda route: route.fulfill(
+                        status=429,
+                        json={
+                            "error": {
+                                "code": "PROVIDER_DAILY_QUOTA",
+                                "message": "Gemini's daily quota is exhausted.",
+                                "retry_at": 1700053000,
+                            },
+                        },
+                    ),
+                )
+                await page.locator("#start").click()
+                await page.wait_for_function(
+                    "document.getElementById('currentActivity').textContent.includes('daily quota')"
+                )
+                assert not uploads, uploads
+                assert "Try again after" in await page.locator("#currentActivity").inner_text()
+                assert await page.locator("#start").is_enabled()
+                await page.locator('[data-view="settings"]').click()
+                await page.locator("#recheckProvider").click()
+                await page.wait_for_function(
+                    "document.getElementById('settingsStatus').textContent.includes('pause cleared')"
+                )
+                await page.locator('[data-view="analyze"]').click()
                 await page.screenshot(path=str(ROOT / "outputs/viewer-smoke.png"), full_page=True)
                 print(
                     {
                         "viewer_upload_worker_result": "passed",
                         "stream_polling_preview": "passed",
+                        "quota_failure_explanation": "passed",
+                        "quota_preflight_blocks_upload": "passed",
                         "javascript_errors": errors,
                         "status": await page.locator("#status").inner_text(),
                     }

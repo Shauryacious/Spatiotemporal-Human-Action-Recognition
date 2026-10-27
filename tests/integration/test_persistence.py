@@ -16,6 +16,7 @@ def submit(repo, asset, settings, key=None):
 
 
 def test_idempotency_claim_fencing(settings, asset):
+    settings = settings.model_copy(update={"require_retry_approval": False})
     repo = Repository(settings)
     repo.add_video(asset)
     a = submit(repo, asset, settings, "key")

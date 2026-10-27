@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from conftest import frame
 
 from shar.inference.multimodal.base import ModelRequest
@@ -66,7 +67,8 @@ async def test_native_offsets_and_owned_cleanup(settings, media):
     await model.close()
 
 
-async def test_real_sdk_serializes_schema_over_fake_http(settings):
+@pytest.mark.parametrize("task", ["temporal", "spatial"])
+async def test_real_sdk_serializes_schema_over_fake_http(settings, task):
     import json
 
     import httpx
@@ -74,6 +76,7 @@ async def test_real_sdk_serializes_schema_over_fake_http(settings):
     from google.genai import types
 
     seen = []
+    settings = settings.model_copy(update={"thinking_level": "low"})
 
     def handle(request):
         body = json.loads(request.content)
@@ -94,6 +97,8 @@ async def test_real_sdk_serializes_schema_over_fake_http(settings):
                     assert_supported(item)
 
         assert_supported(body["generationConfig"]["responseSchema"])
+        if task == "spatial":
+            assert set(body["generationConfig"]["responseSchema"]["properties"]) == {"tracks"}
         return httpx.Response(
             200,
             json={
@@ -123,14 +128,135 @@ async def test_real_sdk_serializes_schema_over_fake_http(settings):
             ),
         )
         model = GeminiModel(settings, client)
-        request = ModelRequest(
-            "temporal", "walk", [frame()], 0.0, 1.0, prompt="offline schema test"
-        )
+        request = ModelRequest(task, "walk", [frame()], 0.0, 1.0, prompt="offline schema test")
         response = await model.infer(request)
         assert not validate_response(response, request).predictions
         assert seen[0]["generationConfig"]["responseMimeType"] == "application/json"
+        thinking = seen[0]["generationConfig"]["thinkingConfig"]
+        assert thinking.get("thinkingLevel", thinking.get("thinking_level")) == "LOW"
         assert (
             "responseSchema" in seen[0]["generationConfig"]
             or "responseJsonSchema" in seen[0]["generationConfig"]
         )
         await model.close()
+
+
+async def test_provider_failure_preserves_rate_limit_category(settings):
+    import pytest
+    from google.genai import errors
+
+    from shar.errors import SharError
+
+    client = client_with_response()
+    client.aio.models.generate_content.side_effect = errors.ClientError(
+        429, {"error": {"message": "Quota exceeded", "status": "RESOURCE_EXHAUSTED"}}
+    )
+    model = GeminiModel(settings, client)
+    with pytest.raises(SharError) as caught:
+        await model.infer(ModelRequest("temporal", "walk", [frame()], 0.0, 1.0))
+    assert caught.value.code == "PROVIDER_RATE_LIMIT"
+    assert caught.value.retryable
+    await model.close()
+
+
+def test_daily_quota_is_terminal_and_retains_structured_retry_delay():
+    from google.genai import errors
+
+    from shar.inference.multimodal.gemini import provider_error
+
+    error = provider_error(
+        errors.ClientError(
+            429,
+            {
+                "error": {
+                    "message": "sensitive provider details must not be exposed",
+                    "status": "RESOURCE_EXHAUSTED",
+                    "details": [
+                        {
+                            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                            "violations": [
+                                {
+                                    "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+                                    "quotaValue": "20",
+                                }
+                            ],
+                        },
+                        {
+                            "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                            "retryDelay": "53008s",
+                        },
+                    ],
+                }
+            },
+        )
+    )
+    assert error.code == "PROVIDER_DAILY_QUOTA"
+    assert not error.retryable
+    assert error.retry_after == 53008
+    assert "daily quota" in error.message
+    assert "sensitive" not in error.message
+
+
+def test_minute_quota_honors_larger_of_header_and_structured_delay():
+    import httpx
+    from google.genai import errors
+
+    from shar.inference.multimodal.gemini import provider_error
+
+    error = provider_error(
+        errors.ClientError(
+            429,
+            {
+                "error": {
+                    "details": [
+                        {
+                            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                            "violations": [
+                                {
+                                    "quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+                                    "quotaValue": "10",
+                                }
+                            ],
+                        },
+                        {
+                            "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                            "retryDelay": "32.5s",
+                        },
+                    ]
+                }
+            },
+            response=httpx.Response(429, headers={"Retry-After": "20"}),
+        )
+    )
+    assert error.code == "PROVIDER_RATE_LIMIT"
+    assert error.retryable
+    assert error.retry_after == 32.5
+
+
+def test_zero_quota_does_not_retry():
+    from google.genai import errors
+
+    from shar.inference.multimodal.gemini import provider_error
+
+    error = provider_error(
+        errors.ClientError(
+            429,
+            {
+                "error": {
+                    "details": [
+                        {
+                            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                            "violations": [
+                                {
+                                    "quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+                                    "quotaValue": "0",
+                                }
+                            ],
+                        },
+                    ]
+                }
+            },
+        )
+    )
+    assert error.code == "PROVIDER_QUOTA_EXHAUSTED"
+    assert not error.retryable

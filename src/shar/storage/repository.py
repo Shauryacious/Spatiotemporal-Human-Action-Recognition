@@ -62,6 +62,17 @@ class Repository:
         ).hexdigest()
         now, job_id = time.time(), uid()
         with self.transaction() as db:
+            # A retry decision authorizes one child run, even across double clicks,
+            # tabs, lost HTTP responses, or idempotency-key expiry.
+            if request.get("_retry_of"):
+                child = db.execute(
+                    select(m.jobs.c.id).where(
+                        m.jobs.c.owner_id == owner,
+                        m.jobs.c.request["_retry_of"].as_string() == request["_retry_of"],
+                    )
+                ).first()
+                if child:
+                    return child[0]
             db.execute(delete(m.idempotency_keys).where(m.idempotency_keys.c.expiry < now))
             if key:
                 old = (
@@ -130,6 +141,21 @@ class Repository:
             raise SharError("NOT_FOUND", "Job not found", status=404)
         return dict(row)
 
+    def list_jobs(self, owner, limit=50, offset=0):
+        with self.engine.connect() as db:
+            rows = (
+                db.execute(
+                    select(m.jobs)
+                    .where(m.jobs.c.owner_id == owner)
+                    .order_by(m.jobs.c.created_at.desc(), m.jobs.c.id.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+                .mappings()
+                .all()
+            )
+        return [dict(row) for row in rows]
+
     def _event(self, db, job_id, event, details=None):
         db.execute(
             insert(m.job_events).values(
@@ -141,6 +167,30 @@ class Repository:
         now = time.time()
         with self.transaction() as db:
             expired = and_(m.jobs.c.status == "running", m.jobs.c.lease_until < now)
+            interrupted = db.execute(select(m.jobs).where(expired)).mappings().all()
+            for row in interrupted:
+                if row["config"].get("require_retry_approval", True):
+                    failure = {
+                        "stage": row["stage"],
+                        "task": "unknown",
+                        "error_code": "WORKER_INTERRUPTED",
+                        "can_retry": True,
+                        "message": "The worker stopped before confirming the result. The in-flight request may have been charged; retry only if you want another attempt.",
+                        "retry_at": None,
+                    }
+                    db.execute(
+                        update(m.jobs)
+                        .where(m.jobs.c.id == row["id"])
+                        .values(
+                            status="failed",
+                            stage="failed",
+                            error_code="WORKER_INTERRUPTED",
+                            completed_at=now,
+                            lease_token=None,
+                            lease_until=None,
+                        )
+                    )
+                    self._event(db, row["id"], "failed", {**failure, "failure": failure})
             db.execute(
                 update(m.jobs)
                 .where(expired, m.jobs.c.attempt >= self.settings.max_job_attempts)
@@ -229,7 +279,29 @@ class Repository:
         with self.transaction() as db:
             if not db.execute(select(m.jobs.c.id).where(self.fence(job_id, token))).first():
                 raise SharError("LEASE_LOST", "Worker lease was lost")
+            if details.get("stage"):
+                db.execute(
+                    update(m.jobs).where(self.fence(job_id, token)).values(stage=details["stage"])
+                )
             self._event(db, job_id, "checkpoint", details)
+
+    def job_activity(self, job_id, owner):
+        self.job(job_id, owner)
+        with self.engine.connect() as db:
+            rows = (
+                db.execute(
+                    select(m.job_events)
+                    .where(m.job_events.c.job_id == job_id)
+                    .order_by(m.job_events.c.id.desc())
+                    .limit(200)
+                )
+                .mappings()
+                .all()
+            )
+        return [
+            {"at": row["at"], "event": row["event"], "details": row["details"]}
+            for row in reversed(rows)
+        ]
 
     def cancel(self, job_id, owner):
         with self.transaction() as db:
@@ -337,8 +409,13 @@ class Repository:
             row = db.execute(select(m.jobs).where(self.fence(job_id, token))).mappings().first()
             if not row:
                 return
-            retry = error.retryable and row["attempt"] < self.settings.max_job_attempts
+            retry = (
+                not row["config"].get("require_retry_approval", True)
+                and error.retryable
+                and row["attempt"] < self.settings.max_job_attempts
+            )
             state = "retry_wait" if retry else "failed"
+            now = time.time()
             db.execute(
                 update(m.jobs)
                 .where(self.fence(job_id, token))
@@ -346,13 +423,25 @@ class Repository:
                     status=state,
                     stage=state,
                     error_code=error.code,
-                    next_attempt_at=time.time() + min(60, 2 ** row["attempt"]),
-                    completed_at=None if retry else time.time(),
+                    next_attempt_at=now + max(min(60, 2 ** row["attempt"]), error.retry_after)
+                    if retry
+                    else 0.0,
+                    completed_at=None if retry else now,
                     lease_token=None,
                     lease_until=None,
                 )
             )
-            self._event(db, job_id, state, {"error_code": error.code})
+            self._event(
+                db,
+                job_id,
+                state,
+                {
+                    "error_code": error.code,
+                    "message": error.message,
+                    "stage": row["stage"],
+                    "retry_at": now + error.retry_after if error.retry_after else None,
+                },
+            )
 
     def start_stream(self, owner, source_name):
         session_id = uid()
